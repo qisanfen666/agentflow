@@ -72,7 +72,7 @@ try {
     Check $hasData "Redis 中仍有任务数据（task 键: $($taskKeys.Count), 队列正身: $qLen）" "Redis 里找不到任务！持久化失效"
 
     # ---------- 5. 重启 ----------
-    Step "重启 server（世界线收束）"
+    Step "重启 server（验证任务恢复）"
     $serverProc2 = Start-Process $Exe -PassThru -WindowStyle Hidden
     $procs += $serverProc2
     $deadline = (Get-Date).AddSeconds(10)
