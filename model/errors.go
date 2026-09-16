@@ -22,7 +22,7 @@ const (
 //
 //	retryable -> Nack 重新入队（受 max_retries 约束）
 //	permanent -> 直接置 failed
-//	violation -> 置 failed + 审计告警（M5）
+//	violation -> 置 failed + 审计告警（可观测性阶段接入）
 type ErrorClass string
 
 const (

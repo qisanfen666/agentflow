@@ -1,6 +1,6 @@
 // Package dispatch 实现任务执行编排：按锁定版本解析 spec、路由到 Runtime、
 // 驱动任务状态机、发布事件到 Hub。
-// M2 起 Execute 为同步方法，由 engine.Worker 从队列取出后调用；
+// Execute 为同步方法，由 engine.Worker 从队列取出后调用；
 // 重试决策（Nack 退避 or 终态）由 worker 依据返回值执行。
 package dispatch
 
@@ -61,7 +61,7 @@ func (s *taskStream) finish() {
 	close(s.notify)
 }
 
-// Hub 是全部任务事件流的总线。M1 事件只存内存（demo 级）；M5 可观测性阶段再考虑持久化。
+// Hub 是全部任务事件流的总线。事件仅存内存，不持久化（回放持久化属可观测性阶段）。
 // 注意：任务重试时事件继续追加到同一条流（订阅者看到的是各次尝试的拼接）。
 type Hub struct {
 	mu      sync.Mutex

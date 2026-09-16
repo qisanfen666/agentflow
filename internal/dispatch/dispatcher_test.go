@@ -13,7 +13,7 @@ import (
 
 // fakeRuntime 按脚本回放事件的假 Runtime。
 // Type 返回 python-http：model.Validate 只认内置类型，fake 冒名顶替以通过校验
-// （自定义类型注册机制属于 M4 facade 的配置项）。
+// （自定义类型注册机制属于 facade 的配置项）。
 type fakeRuntime struct {
 	events     []runtime.Event
 	blockOnCtx bool // true：挂起直到 ctx 取消，然后直接关通道（不给终止事件）
@@ -138,7 +138,7 @@ func TestFailedPath(t *testing.T) {
 	waitHubFinished(t, hub, task.ID)
 }
 
-// M2 决策①：AGENT_TIMEOUT 可重试——先回退 pending 交给 worker；
+// 错误分类学决策：AGENT_TIMEOUT 可重试——先回退 pending 交给 worker；
 // 重试名额耗尽后才落 timeout 终态。两个路径分别验证。
 func TestTimeoutExhaustedToFinal(t *testing.T) {
 	rt := &fakeRuntime{events: []runtime.Event{

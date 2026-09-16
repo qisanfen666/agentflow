@@ -301,7 +301,7 @@ func TestCancelViaHTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
-// ---------- Tools 端点（M3） ----------
+// ---------- Tools 端点 ----------
 
 func toolPayload() map[string]any {
 	return map[string]any{

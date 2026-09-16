@@ -31,7 +31,7 @@ type taskInput struct {
 	TimeoutSec   int            `json:"timeout_sec"`
 }
 
-// submitTask 提交任务：校验 Agent -> 锁定版本 -> 创建 pending -> 直接触发分发（M1 无队列）。
+// submitTask 提交任务：校验 Agent -> 锁定版本 -> 创建 pending -> 入队。
 func (h *handlers) submitTask(c *gin.Context) {
 	var in taskInput
 	if err := c.ShouldBindJSON(&in); err != nil {

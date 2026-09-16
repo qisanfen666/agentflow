@@ -22,13 +22,13 @@ var _ Queue = (*RedisQueue)(nil)
 //	ready      LIST  待消费 taskID（LPUSH 生产 / BLMOVE 从右侧取最旧，FIFO）
 //	processing LIST  在途 taskID（取出即入；Ack/Nack/Reclaim 移除）
 //	delayed    ZSET  member=taskID, score=就绪时刻(ms)——指数退避的延迟队列
-//	tasks      HASH  field=taskID, value=Task JSON（队列条目正身，Ack 时删除）
+//	tasks      HASH  field=taskID, value=Task JSON（任务数据本体，Ack 时删除）
 //	seen:{id}  STRING EX=可见性超时——在途租约：存在=有 worker 正在处理，
 //	           过期=worker 已崩溃，Reclaim 把它推回 ready
 //
-// 为什么 tasks 单独放 HASH 而不是把 JSON 直接塞进 ready：
-// Nack 需要写入"最新副本"（attempt 已推进），而 processing 里躺着的还是旧 JSON；
-// ID 与数据分离后，移动的永远是 ID，数据原地更新。
+// tasks 单独放 HASH 而不是把 JSON 直接存进 ready 的原因：
+// Nack 需要写入最新副本（attempt 已推进），而 processing 中保存的是入队时的旧 JSON；
+// ID 与数据分离后，队列中移动的永远是 ID，数据原地更新。
 const (
 	keyReady      = "agentflow:q:ready"
 	keyProcessing = "agentflow:q:processing"
@@ -37,14 +37,14 @@ const (
 	keySeenFmt    = "agentflow:q:seen:%s"
 )
 
-// claimScript 取出任务的配套动作：登记在途租约 + 读任务正身。
+// claimScript 取出任务的配套动作：登记在途租约 + 读任务数据。
 // KEYS[1]=tasks hash, KEYS[2]=seen key；ARGV[1]=id, ARGV[2]=可见性秒数。
 var claimScript = redis.NewScript(`
 redis.call('SET', KEYS[2], '1', 'EX', tonumber(ARGV[2]))
 return redis.call('HGET', KEYS[1], ARGV[1])
 `)
 
-// ackScript 结算：移出在途 + 删正身 + 删租约（三步原子）。
+// ackScript 结算：移出在途 + 删除任务数据 + 删除租约（三步原子）。
 // 注意 Lua 必须显式 return 非空值，否则 go-redis 收到 nil reply 会当错误。
 var ackScript = redis.NewScript(`
 redis.call('LREM', KEYS[1], 1, ARGV[1])
@@ -53,7 +53,7 @@ redis.call('DEL', KEYS[3])
 return 1
 `)
 
-// nackScript 退回：更新正身为最新副本，移出在途，按 flag 进 ready 或 delayed。
+// nackScript 退回：更新任务数据为最新副本，移出在途，按 flag 进 ready 或 delayed。
 // LREM 返回 0 = 不在途（重复 Nack / 已被回收），跳过移动——幂等防御。
 // KEYS[1]=processing, KEYS[2]=tasks hash, KEYS[3]=ready, KEYS[4]=delayed, KEYS[5]=seen
 // ARGV[1]=id, ARGV[2]=task JSON, ARGV[3]=0(立即)/1(延迟), ARGV[4]=就绪时刻 ms
@@ -157,19 +157,19 @@ func (q *RedisQueue) Dequeue(ctx context.Context) (model.Task, error) {
 			id, int(q.visibility.Seconds()),
 		).Text()
 		if errors.Is(err, redis.Nil) {
-			data = "" // HGET 打空 = 幽灵条目，走下方清理
+			data = "" // HGET 为空 = 孤儿条目，走下方清理
 		} else if err != nil {
 			return model.Task{}, fmt.Errorf("claim %s: %w", id, err)
 		}
 		if data == "" {
-			// 幽灵条目：ID 在队列里但正身已删（Ack 后的重复投递等）——清掉继续
+			// 孤儿条目：ID 在队列但任务数据已删（Ack 后的重复投递等）——清除后继续
 			q.rdb.LRem(ctx, keyProcessing, 1, id)
 			continue
 		}
 
 		var task model.Task
 		if err := json.Unmarshal([]byte(data), &task); err != nil {
-			// 毒丸防御：删正身移出在途，绝不让坏数据卡死 worker
+			// 毒丸防御：删除任务数据并移出在途，避免坏数据阻塞 worker
 			_ = ackScript.Run(ctx, q.rdb,
 				[]string{keyProcessing, keyTasks, fmt.Sprintf(keySeenFmt, id)}, id).Err()
 			log.Printf("[redisqueue] poison task %s dropped: %v", id, err)

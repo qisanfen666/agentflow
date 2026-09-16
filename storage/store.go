@@ -1,4 +1,4 @@
-// Package storage 是公开扩展点②：可替换的持久化实现（M1 内存 / M2 Redis）。
+// Package storage 是公开扩展点②：可替换的持久化实现（内存 / Redis）。
 // 接口按实体聚合定义；接口即合同，实现方只需满足以下行为语义。
 package storage
 
@@ -44,8 +44,7 @@ type AgentStore interface {
 	Versions(ctx context.Context, id string) ([]model.AgentSpec, error)
 }
 
-// TaskStore 负责任务记录的存取。M1 直接整条读写（Save 全量覆盖），
-// 乐观并发控制推迟到 M2 引入 Redis 时一并设计。
+// TaskStore 负责任务记录的存取。Save 为全量覆盖写。
 type TaskStore interface {
 	// Create 保存新任务，ID 与时间戳由存储层分配，status 必须为 pending。
 	Create(ctx context.Context, task model.Task) (model.Task, error)
@@ -58,15 +57,15 @@ type TaskStore interface {
 }
 
 // IdemStore 提交幂等原语：key -> taskID 的占位（合同 task-state.md 第 4 节）。
-// M1 内存版带 TTL；M2 Redis 版 SETNX + EX，窗口期由调用方（api）配置。
+// 内存实现带 TTL；Redis 实现用 SETNX + EX，窗口期由调用方（api）配置。
 type IdemStore interface {
 	// PutIfAbsent 若 key 不存在（或已过期）则占位，返回 ("", true, nil)；
 	// 已被占用则返回对方的 taskID 与 ("", false)。ttl<=0 视为永不过期。
 	PutIfAbsent(ctx context.Context, key, taskID string, ttl time.Duration) (existing string, inserted bool, err error)
 }
 
-// ToolStore 工具注册表的持久化合同（M3）。
-// v1 工具不可变、无软删除：改定义 = 删了重注册（注册表体量小，不引入版本机制）。
+// ToolStore 工具注册表的持久化合同。
+// 工具不可变、无软删除：改定义 = 删了重注册（注册表体量小，不引入版本机制）。
 type ToolStore interface {
 	// Create 注册工具：校验由上层（registry）完成，存储层只管唯一性——
 	// Name 重复返回 ErrDuplicate。ID 与 CreatedAt 由存储层填充。
@@ -78,6 +77,6 @@ type ToolStore interface {
 	// GetByName 按名字取（MCP 导出与 Agent 侧调用解析的入口）。
 	GetByName(ctx context.Context, name string) (model.ToolDef, error)
 
-	// List 全量列表（v1 不分页——注册表是配置量级，不是数据量级）。
+	// List 全量列表（不分页——注册表是配置量级，不是数据量级）。
 	List(ctx context.Context) ([]model.ToolDef, error)
 }

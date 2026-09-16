@@ -1,8 +1,7 @@
 // Package agentflow 是 AgentFlow 控制面库的入口包。
 //
 // 设计定位：可 import 的 Agent 控制面库，只做调度/排队/隔离/审计，
-// 不提供 AI 能力。本文件只定义用户可见的配置契约（M0 定稿稿），
-// 配置的加载（YAML + 环境变量覆盖）在 M1 实现。
+// 不提供 AI 能力。本文件定义用户可见的配置契约。
 package agentflow
 
 // Config 是用户唯一需要接触的顶层配置。
@@ -23,7 +22,7 @@ type ServerConfig struct {
 	Mode string `yaml:"mode" json:"mode"` // gin mode: debug | release | test
 }
 
-// StorageConfig 选择存储实现：memory（默认，零依赖）或 redis（M2 引入）。
+// StorageConfig 选择存储实现：memory（默认，零依赖）或 redis。
 type StorageConfig struct {
 	Driver string      `yaml:"driver" json:"driver"` // memory | redis
 	Redis  RedisConfig `yaml:"redis" json:"redis"`
@@ -35,7 +34,7 @@ type RedisConfig struct {
 	DB       int    `yaml:"db" json:"db"`
 }
 
-// QueueConfig 控制任务队列与重试行为（M1 内存实现 / M2 Redis 实现）。
+// QueueConfig 控制任务队列与重试行为（内存实现 / Redis 实现）。
 type QueueConfig struct {
 	Name                 string `yaml:"name" json:"name"`                                     // 队列名，默认 "agentflow:tasks"
 	MaxRetries           int    `yaml:"max_retries" json:"max_retries"`                       // 可重试错误的最大重试次数，默认 3
@@ -43,7 +42,7 @@ type QueueConfig struct {
 	VisibilityTimeoutSec int    `yaml:"visibility_timeout_sec" json:"visibility_timeout_sec"` // 任务被取走后多久未 Ack 视为丢失，默认 300
 }
 
-// SandboxConfig 控制 Docker 沙箱执行环境（M3 生效）。
+// SandboxConfig 控制 Docker 沙箱执行环境。
 type SandboxConfig struct {
 	Enabled         bool   `yaml:"enabled" json:"enabled"`                     // 是否启用 docker runtime
 	Image           string `yaml:"image" json:"image"`                         // 沙箱基础镜像
@@ -53,13 +52,13 @@ type SandboxConfig struct {
 	NetworkDisabled bool   `yaml:"network_disabled" json:"network_disabled"`   // 禁用网络
 }
 
-// AuthConfig 控制访问认证（v1 仅 API Key；RBAC 属于 M6）。
+// AuthConfig 控制访问认证（当前仅 API Key；RBAC 属于后续治理阶段）。
 type AuthConfig struct {
 	Enabled bool     `yaml:"enabled" json:"enabled"`
 	APIKeys []string `yaml:"api_keys" json:"api_keys"`
 }
 
-// ObservabilityConfig 控制可观测性（M5 生效）。
+// ObservabilityConfig 控制可观测性。
 type ObservabilityConfig struct {
 	ServiceName    string `yaml:"service_name" json:"service_name"`       // OTel service name
 	OTLPEndpoint   string `yaml:"otlp_endpoint" json:"otlp_endpoint"`     // OTLP 导出地址

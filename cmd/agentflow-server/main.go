@@ -1,8 +1,7 @@
 // agentflow-server 是开箱即用的演示二进制：手工 DI 装配的最小示范。
-// 注意：它不是库的主体——库形态由 M4 facade（agentflow.New）提供，
-// 优雅关停同样属 M4。
+// 库形态由根包 facade（agentflow.New）提供，优雅关停同属 facade 职责。
 //
-// 环境变量（M4 前的简易配置面，M4 换 agentflow.Config）：
+// 环境变量（facade 之外的简易配置面）：
 //
 //	AGENTFLOW_MODE           memory | redis（默认 memory）
 //	AGENTFLOW_ADDR           监听地址（默认 :8080）
@@ -87,8 +86,8 @@ func main() {
 	}
 
 	hub := dispatch.NewHub()
-	// 双 Runtime 共存：按 AgentSpec.Runtime.Type 路由（M3 验收点）。
-	// 沙箱限制 M4 前用固定演示值（只读根 + 256MB + 1 核），M4 换 SandboxConfig。
+	// 双 Runtime 共存：按 AgentSpec.Runtime.Type 路由。
+	// 沙箱限制用固定演示值（只读根 + 256MB + 1 核）。
 	dispatcher := dispatch.New(agents, tasks, hub,
 		runtime.NewPythonHTTP(),
 		runtime.NewDocker(runtime.SandboxOptions{

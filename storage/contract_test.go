@@ -12,7 +12,8 @@ import (
 )
 
 // 本文件是存储层合同测试套件：同一组断言跑 memory / redis 两个实现。
-// 接口语义（store.go 注释 + M0 合同文档）由测试守护——任何实现想换（M2+：SQL、Mongo），
+// 接口语义（store.go 注释 + docs/contracts 合同文档）由测试守护——
+// 任何新实现（SQL、Mongo 等）跑通同一套断言即视为符合合同。
 // 必须先过这套测试。这是"接口即合同"的验收机制。
 
 // storeFactory 每个测试拿到干净的存储实例。
@@ -39,7 +40,7 @@ func runAgentLifecycle(t *testing.T, mk storeFactory) {
 		t.Fatalf("create should assign id and version=1, got %q v%d", spec.ID, spec.Version)
 	}
 
-	// 更新：新版本，旧版本不可变
+	// 更新：新版本生效，历史版本不可变
 	next := validSpec()
 	next.Name = "chat-agent-v2"
 	updated, err := s.Update(ctx, spec.ID, 1, next)

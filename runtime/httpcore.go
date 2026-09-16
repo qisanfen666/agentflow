@@ -92,7 +92,7 @@ func scanEvents(resp *http.Response, ch chan<- Event) bool {
 				return true
 			}
 			ch <- ev
-			// 错误即终点：后续若有事件属于协议违约，但 v1 选择直接停读（简单且安全）
+			// 错误即终点：后续若有事件属于协议违约，当前实现选择直接停读（简单且安全）
 			if ev.Type == EventError {
 				return true
 			}

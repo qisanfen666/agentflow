@@ -28,7 +28,7 @@ var errHealthTimeout = errors.New("sandbox agent did not become healthy in time"
 
 // SandboxOptions 沙箱资源限制，wiring 时映射自 agentflow.SandboxConfig。
 // 注意：NetworkDisabled 本版不落地——SSE 传输依赖端口映射，禁网沙箱需要
-// 换 exec/stdio 传输通道（M5+ 再议），这里明确不支持而不是静默忽略。
+// 换 exec/stdio 传输通道，当前明确不支持而不是静默忽略。
 type SandboxOptions struct {
 	ReadOnlyRootFS bool          // --read-only：根文件系统只读
 	MemoryMB       int64         // --memory：内存上限（MB）
@@ -84,7 +84,7 @@ func (d *Docker) Health(ctx context.Context, spec model.RuntimeSpec) error {
 	return nil
 }
 
-// Execute 执行任务：起一次性沙箱容器，就绪后走 SSE 内核，结束拆容器。
+// Execute 执行任务：创建一次性沙箱容器，就绪后走 SSE 内核，结束销毁容器。
 func (d *Docker) Execute(ctx context.Context, req Request) <-chan Event {
 	ch := make(chan Event, 64)
 	go func() {

@@ -90,17 +90,17 @@ func TestRedisQueueAckRemovesEverything(t *testing.T) {
 		t.Fatalf("processing len = %d, want 0", n)
 	}
 	if n, _ := c.HLen(ctx, keyTasks).Result(); n != 0 {
-		t.Fatalf("tasks hash len = %d, want 0（正身必须被清）", n)
+		t.Fatalf("tasks hash len = %d, want 0（任务数据必须被清除）", n)
 	}
 }
 
-// TestRedisQueueGhostEntry 幽灵条目：ID 在 ready 但正身已删（Ack 后的重复投递），
+// TestRedisQueueGhostEntry 孤儿条目：ID 在 ready 但任务数据已删（Ack 后的重复投递），
 // Dequeue 必须跳过它并清理 processing，随后取到正常任务。
 func TestRedisQueueGhostEntry(t *testing.T) {
 	q, c := redisQueue(t)
 	ctx := context.Background()
 
-	_ = c.LPush(ctx, keyReady, "t_ghost") // 无正身
+	_ = c.LPush(ctx, keyReady, "t_ghost") // 无任务数据
 	_ = q.Enqueue(ctx, mkTask("t_real"))
 
 	if got := mustDequeue(t, q); got.ID != "t_real" {
@@ -187,7 +187,7 @@ func TestRedisQueueReclaimCrashedWorker(t *testing.T) {
 	}
 }
 
-// TestRedisQueuePoisonDropped 毒丸：正身是坏 JSON 时 Dequeue 丢弃并继续，
+// TestRedisQueuePoisonDropped 毒丸：任务数据为坏 JSON 时 Dequeue 丢弃并继续，
 // 不阻塞后续任务。
 func TestRedisQueuePoisonDropped(t *testing.T) {
 	q, c := redisQueue(t)

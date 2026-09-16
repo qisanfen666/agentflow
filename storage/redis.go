@@ -344,8 +344,8 @@ const (
 	keyToolNames = "agentflow:tools:names"
 )
 
-// toolCreateScript 原子注册：名字索引 HSETNX 占位成功才写正身。
-// 注意显式 return（Lua 无返回值会被 go-redis 当 nil reply 错误，M2 踩过）。
+// toolCreateScript 原子注册：名字索引 HSETNX 占位成功才写工具数据。
+// 注意显式 return：go-redis 把无返回值的脚本执行结果当作 nil reply 错误。
 var toolCreateScript = redis.NewScript(`
 if redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2]) == 0 then
   return 0

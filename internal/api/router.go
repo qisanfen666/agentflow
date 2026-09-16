@@ -1,5 +1,5 @@
 // Package api 提供 HTTP 接口层。internal 包：实现细节，不对外承诺稳定性。
-// 路由合同见 docs/api/openapi.yaml（M1 实现 11/14 端点，tools 三个属 M3）。
+// 路由合同见 docs/api/openapi.yaml。
 package api
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/qisanfen666/agentflow/storage"
 )
 
-// Dependencies 由调用方（M4 前是 main / 测试，M4 后是 facade）手工注入的组件。
+// Dependencies 由调用方（main / 测试 / facade）手工注入的组件。
 type Dependencies struct {
 	Agents     storage.AgentStore
 	Tasks      storage.TaskStore
@@ -34,7 +34,7 @@ type handlers struct {
 // NewRouter 构建 gin 引擎。gin.SetMode 由调用方决定（测试用 TestMode）。
 func NewRouter(deps Dependencies) *gin.Engine {
 	r := gin.New()
-	// 只挂 Recovery：日志/认证/CORS 属横切关注点，M4 facade 收口时按配置挂载
+	// 只挂 Recovery：日志/认证/CORS 属横切关注点，由 facade 按配置挂载
 	r.Use(gin.Recovery())
 
 	r.GET("/health", func(c *gin.Context) {

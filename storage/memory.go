@@ -42,8 +42,8 @@ type agentRecord struct {
 
 func (r *agentRecord) latest() model.AgentSpec { return r.versions[len(r.versions)-1] }
 
-// MemoryAgentStore 是 AgentStore 的内存实现（M1 默认，兼作测试 fake）。
-// 重启即失数据，仅用于开发/演示/测试；M2 换 Redis 实现。
+// MemoryAgentStore 是 AgentStore 的内存实现（默认驱动，兼作测试 fake）。
+// 数据不持久化，仅用于开发/演示/测试。
 type MemoryAgentStore struct {
 	mu     sync.RWMutex
 	agents map[string]*agentRecord

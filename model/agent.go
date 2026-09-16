@@ -10,8 +10,8 @@ import (
 
 // RuntimeType 标识 Agent 的执行环境类型，控制面据此路由到对应 Runtime 实现。
 const (
-	RuntimePythonHTTP = "python-http" // HTTP 直连 Agent（M1）
-	RuntimeDocker     = "docker"      // Docker 沙箱（M3）
+	RuntimePythonHTTP = "python-http" // HTTP 直连 Agent
+	RuntimeDocker     = "docker"      // Docker 沙箱
 )
 
 // RuntimeSpec 描述执行环境路由信息，按 Type 分派到对应 Runtime。

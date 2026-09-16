@@ -1,6 +1,6 @@
 // Package engine 是任务执行引擎：消费队列、驱动 dispatcher、落地重试语义。
 // 本包定义自己消费的队列接口（"接口由消费者定义"的 Go 惯例，不再有集中式 interface.go）。
-// 实现可以是内存的（单测 fake）或 Redis 的（BLMOVE 可靠队列，M2-R3）。
+// 实现可以是内存的（单测 fake）或 Redis 的（BLMOVE 可靠队列）。
 package engine
 
 import (

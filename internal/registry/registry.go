@@ -40,7 +40,7 @@ func (r *Registry) Register(ctx context.Context, tool model.ToolDef) (model.Tool
 }
 
 // ValidateArgs 校验一次工具调用的实参是否符合定义的 schema。
-// M3 暴露给上层（v1 主要用于测试与演示；M6 policy 阶段将接入调用链）。
+// 供上层做调用前校验（后续治理阶段将接入调用链）。
 func (r *Registry) ValidateArgs(tool model.ToolDef, args map[string]any) error {
 	if tool.Parameters == nil {
 		return nil // 无 schema 约束
@@ -61,8 +61,8 @@ func (r *Registry) List(ctx context.Context) ([]model.ToolDef, error) {
 }
 
 // compileSchema 编译一份 JSON Schema（无 $schema 声明时按最新 draft，2020-12）。
-// v6 API 坑：AddResource 的第二参是已解析的 Go 值（不是 io.Reader）。
-// 编译开销可控且定义不可变，v1 不做缓存（YAGNI；量级是配置不是流量）。
+// v6 API 注意：AddResource 的第二参是已解析的 Go 值（不是 io.Reader）。
+// 编译开销可控且定义不可变，不做缓存（量级是配置不是流量）。
 func compileSchema(m map[string]any) (*jsonschema.Schema, error) {
 	c := jsonschema.NewCompiler()
 	if err := c.AddResource("tool-schema.json", m); err != nil {

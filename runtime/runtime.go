@@ -1,6 +1,6 @@
 // Package runtime 是公开扩展点①：Agent 执行环境抽象。
 // 用户实现 Runtime 接口即可接入自定义执行环境（K8s Job、Firecracker VM、远程集群等），
-// 内置实现：python-http（HTTP 直连）、docker（M3 沙箱）。
+// 内置实现：python-http（HTTP 直连）、docker（沙箱）。
 package runtime
 
 import (

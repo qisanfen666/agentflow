@@ -1,4 +1,4 @@
-// 工具注册表端点（M3）。校验与 MCP 转换逻辑全部在 internal/registry，
+// 工具注册表端点。校验与 MCP 转换逻辑全部在 internal/registry，
 // handler 只做 HTTP 翻译——与 agent/task handler 同一模式。
 package api
 
