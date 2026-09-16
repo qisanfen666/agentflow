@@ -1,0 +1,15 @@
+# 控制面二进制：多阶段构建，产物跑在 alpine 上
+FROM golang:1.25-alpine AS build
+# 国内网络下 proxy.golang.org 不可达，走 goproxy.cn
+ENV GOPROXY=https://goproxy.cn,direct
+WORKDIR /src
+# 先拷依赖清单，利用 layer 缓存加速重复构建
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /agentflow-server ./cmd/agentflow-server
+
+FROM alpine:3.20
+COPY --from=build /agentflow-server /agentflow-server
+EXPOSE 8080
+ENTRYPOINT ["/agentflow-server", "-addr", ":8080"]

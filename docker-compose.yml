@@ -1,0 +1,17 @@
+# M1 端到端测试栈：控制面(8080 对外) + 参照 Agent(仅内网)
+# 用法: docker compose up --build -d   然后 curl http://localhost:8080/health
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.agent
+    # 不映射端口：模拟执行面隔离，只能经控制面内网访问（host 用 http://agent:8081）
+
+  server:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.server
+    ports:
+      - "18080:8080" # 宿主 8080 会被 wslrelay 截胡（127.0.0.1 返回 Unauthorized），换 18080
+    depends_on:
+      - agent

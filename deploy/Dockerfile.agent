@@ -1,0 +1,6 @@
+# 参照 Agent：零依赖 Python，仅拷贝单文件
+FROM python:3.11-slim
+WORKDIR /app
+COPY examples/python-agent/agent.py .
+EXPOSE 8081
+CMD ["python", "agent.py", "8081"]

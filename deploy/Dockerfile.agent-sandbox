@@ -1,0 +1,10 @@
+# 沙箱 Agent 镜像：每个任务一个一次性容器（runtime/docker.go 消费）。
+# 与 Dockerfile.agent 同源（examples/python-agent），但作为 v1 沙箱的默认镜像，
+# 构建名固定 agentflow-sandbox:latest：
+#   docker build -t agentflow-sandbox:latest -f deploy/Dockerfile.agent-sandbox .
+# 注意：agent.py 必须绑定 0.0.0.0（容器内 127.0.0.1 不可达，M1 踩过）。
+FROM python:3.12-alpine
+WORKDIR /app
+COPY examples/python-agent/agent.py .
+EXPOSE 8081
+CMD ["python", "agent.py", "8081"]

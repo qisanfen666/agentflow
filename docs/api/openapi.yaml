@@ -1,0 +1,277 @@
+openapi: 3.1.0
+info:
+  title: AgentFlow Control Plane API
+  version: 0.1.0
+  description: |
+    Agent 控制面公开 API（M0 定稿稿）。
+    Agent 执行面合同（POST /run/stream，SSE）不在本文件范围，见 docs/protocol/sse.md。
+    相比旧版 13 端点，新增 DELETE /tasks/{id}（显式取消，配合状态机 cancelled 语义）。
+
+servers:
+  - url: http://localhost:8080
+
+security:
+  - APIKeyAuth: []
+
+tags:
+  - name: system
+  - name: agents
+  - name: tasks
+  - name: tools
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: 健康检查
+      security: []
+      responses:
+        "200":
+          description: 存活
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /api/v1/agents:
+    post:
+      tags: [agents]
+      summary: 创建 Agent（version=1）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentSpecInput" }
+      responses:
+        "201": { description: 创建成功, content: { application/json: { schema: { $ref: "#/components/schemas/AgentSpec" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    get:
+      tags: [agents]
+      summary: 列出所有未删除 Agent
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AgentSpec" } } } } }
+
+  /api/v1/agents/{id}:
+    parameters: [ { $ref: "#/components/parameters/AgentID" } ]
+    get:
+      tags: [agents]
+      summary: 获取 Agent 当前版本详情
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AgentSpec" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [agents]
+      summary: 更新 Agent（创建新版本，旧版本不可变）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentSpecUpdate" }
+      responses:
+        "200": { description: 新版本, content: { application/json: { schema: { $ref: "#/components/schemas/AgentSpec" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: base_version 冲突（乐观锁失败） }
+    delete:
+      tags: [agents]
+      summary: 软删除（存量任务继续执行）
+      responses:
+        "204": { description: 已删除 }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/agents/{id}/versions:
+    get:
+      tags: [agents]
+      summary: 版本历史（升序）
+      parameters: [ { $ref: "#/components/parameters/AgentID" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AgentSpec" } } } } }
+
+  /api/v1/tasks:
+    post:
+      tags: [tasks]
+      summary: 提交任务（锁定 agent_version，入队）
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: 幂等键，窗口期内重复提交返回原任务
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskInput" }
+      responses:
+        "202": { description: 已入队, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tasks/{id}:
+    parameters: [ { $ref: "#/components/parameters/TaskID" } ]
+    get:
+      tags: [tasks]
+      summary: 查询任务状态
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [tasks]
+      summary: 取消任务（pending 摘除队列 / running 尽力传播）
+      responses:
+        "202": { description: 已请求取消, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tasks/{id}/stream:
+    get:
+      tags: [tasks]
+      summary: SSE 订阅任务输出（事件格式同执行面协议）
+      description: |
+        透传 Agent 的 SSE 事件流给客户端；任务若在队列中则先发排队能力协商事件。
+        事件 schema 见 docs/protocol/sse.md。
+      parameters: [ { $ref: "#/components/parameters/TaskID" } ]
+      responses:
+        "200":
+          description: 事件流
+          content:
+            text/event-stream:
+              schema: { type: string }
+              example: |
+                data: {"type":"token","content":" Hel"}
+                data: {"type":"done","task_id":"t_9f3k2"}
+                data: [DONE]
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tools:
+    post:
+      tags: [tools]
+      summary: 注册工具（JSON Schema 参数定义）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ToolDef" }
+      responses:
+        "201": { description: 已注册, content: { application/json: { schema: { $ref: "#/components/schemas/ToolDef" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    get:
+      tags: [tools]
+      summary: 列出工具
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ToolDef" } } } } }
+
+  /api/v1/tools/validate:
+    post:
+      tags: [tools]
+      summary: 按工具 schema 校验参数
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tool, args]
+              properties:
+                tool: { type: string }
+                args: { type: object }
+      responses:
+        "200": { description: 校验通过, content: { application/json: { schema: { type: object, properties: { valid: { type: boolean } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    APIKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    AgentID: { name: id, in: path, required: true, schema: { type: string } }
+    TaskID: { name: id, in: path, required: true, schema: { type: string } }
+
+  responses:
+    BadRequest:
+      description: 请求非法
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: INVALID_PAYLOAD }
+        message: { type: string }
+
+    RuntimeSpec:
+      type: object
+      required: [type]
+      description: 执行环境路由信息，按 type 分派到对应 Runtime
+      properties:
+        type: { type: string, enum: [python-http, docker], description: v1 内置两种，自定义 Runtime 经配置注册 }
+        host: { type: string, description: python-http 必填，Agent 服务地址 }
+        image: { type: string, description: docker 可选，覆盖沙箱默认镜像 }
+        env: { type: object, additionalProperties: { type: string } }
+
+    AgentSpecInput:
+      type: object
+      required: [name, type, runtime]
+      properties:
+        name: { type: string }
+        type: { type: string, description: 业务类型标签（如 chat / rag / workflow） }
+        runtime: { $ref: "#/components/schemas/RuntimeSpec" }
+        config: { type: object, description: 原样透传给 Agent 的自定义配置 }
+
+    AgentSpecUpdate:
+      allOf:
+        - $ref: "#/components/schemas/AgentSpecInput"
+        - type: object
+          required: [base_version]
+          properties:
+            base_version: { type: integer, description: 乐观锁基准版本 }
+
+    AgentSpec:
+      allOf:
+        - $ref: "#/components/schemas/AgentSpecInput"
+        - type: object
+          properties:
+            id: { type: string }
+            version: { type: integer }
+            created_at: { type: string, format: date-time }
+            deleted_at: { type: [string, "null"], format: date-time }
+
+    TaskInput:
+      type: object
+      required: [agent_id, payload]
+      properties:
+        agent_id: { type: string }
+        agent_version: { type: integer, description: 缺省锁定当前最新版本 }
+        payload: { type: object }
+        timeout_sec: { type: integer, default: 300 }
+
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        agent_id: { type: string }
+        agent_version: { type: integer }
+        status: { type: string, enum: [pending, running, succeeded, failed, cancelled, timeout] }
+        attempt_count: { type: integer }
+        error: { $ref: "#/components/schemas/Error" }
+        usage: { type: object, description: usage 事件累加结果 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ToolDef:
+      type: object
+      required: [name, parameters]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        parameters: { type: object, description: JSON Schema（draft 2020-12 子集） }
