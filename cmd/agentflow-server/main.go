@@ -22,12 +22,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
-	"agentflow/internal/api"
-	"agentflow/internal/dispatch"
-	"agentflow/internal/engine"
-	"agentflow/internal/registry"
-	"agentflow/runtime"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/internal/api"
+	"github.com/qisanfen666/agentflow/internal/dispatch"
+	"github.com/qisanfen666/agentflow/internal/engine"
+	"github.com/qisanfen666/agentflow/internal/registry"
+	"github.com/qisanfen666/agentflow/runtime"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 func env(key, def string) string {

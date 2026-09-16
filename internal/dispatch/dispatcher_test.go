@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"agentflow/model"
-	"agentflow/runtime"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/runtime"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 // fakeRuntime 按脚本回放事件的假 Runtime。

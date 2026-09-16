@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // SSE 事件类型常量，对应 docs/protocol/sse.md v1。

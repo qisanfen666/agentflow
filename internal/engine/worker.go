@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"agentflow/internal/dispatch"
-	"agentflow/model"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/internal/dispatch"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 // WorkerConfig 消费行为参数（wiring 时映射自 config.QueueConfig）。

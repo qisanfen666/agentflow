@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // registerAgentRoutes 注册 Agent 域 6 端点（合同：openapi.yaml /api/v1/agents*）。

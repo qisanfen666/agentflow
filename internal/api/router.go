@@ -8,11 +8,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"agentflow/internal/dispatch"
-	"agentflow/internal/engine"
-	"agentflow/internal/registry"
-	"agentflow/model"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/internal/dispatch"
+	"github.com/qisanfen666/agentflow/internal/engine"
+	"github.com/qisanfen666/agentflow/internal/registry"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 // Dependencies 由调用方（M4 前是 main / 测试，M4 后是 facade）手工注入的组件。

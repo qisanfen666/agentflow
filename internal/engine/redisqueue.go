@@ -12,7 +12,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 var _ Queue = (*RedisQueue)(nil)

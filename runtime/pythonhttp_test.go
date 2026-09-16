@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // collect 消费事件通道直到关闭。

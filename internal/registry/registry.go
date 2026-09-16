@@ -9,8 +9,8 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"agentflow/model"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 // Registry 组合存储与校验。薄层：存储语义全部委托 ToolStore。

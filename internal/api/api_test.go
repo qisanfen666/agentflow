@@ -14,12 +14,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"agentflow/internal/dispatch"
-	"agentflow/internal/engine"
-	"agentflow/internal/registry"
-	"agentflow/model"
-	"agentflow/runtime"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/internal/dispatch"
+	"github.com/qisanfen666/agentflow/internal/engine"
+	"github.com/qisanfen666/agentflow/internal/registry"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/runtime"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 // scriptedRuntime 按脚本回放事件 / 挂起等取消的假 Runtime。

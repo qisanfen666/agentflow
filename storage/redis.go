@@ -10,7 +10,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // 编译期接口实现检查。
@@ -126,7 +126,7 @@ func (s *RedisAgentStore) Create(ctx context.Context, spec model.AgentSpec) (mod
 		return model.AgentSpec{}, err
 	}
 	if res < 0 {
-		return model.AgentSpec{}, fmt.Errorf("agentflow/storage: id collision on %s", spec.ID)
+		return model.AgentSpec{}, fmt.Errorf("github.com/qisanfen666/agentflow/storage: id collision on %s", spec.ID)
 	}
 	return spec, nil
 }

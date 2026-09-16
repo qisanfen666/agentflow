@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 var _ Queue = (*MemoryQueue)(nil)

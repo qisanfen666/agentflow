@@ -10,7 +10,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // Redis 队列集成测试：与 storage 包同一套约定——AGENTFLOW_TEST_REDIS 地址

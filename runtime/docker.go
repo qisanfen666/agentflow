@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // DefaultSandboxImage 沙箱 Agent 镜像（deploy/Dockerfile.agent-sandbox 构建，

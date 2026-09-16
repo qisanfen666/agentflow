@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // 本文件是存储层合同测试套件：同一组断言跑 memory / redis 两个实现。

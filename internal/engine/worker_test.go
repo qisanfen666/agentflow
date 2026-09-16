@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"agentflow/internal/dispatch"
-	"agentflow/model"
-	"agentflow/runtime"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/internal/dispatch"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/runtime"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 // flakyRuntime 前 failN 次调用返回可重试错误，之后成功。

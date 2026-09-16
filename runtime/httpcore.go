@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // 本文件是 SSE 客户端内核：与 Agent 建立一次 POST /run/stream 连接，

@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // registerTaskRoutes 注册 Task 域 4 端点（合同：openapi.yaml /api/v1/tasks*）。

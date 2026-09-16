@@ -7,14 +7,14 @@ import (
 	"errors"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // 哨兵错误：调用方用 errors.Is 判定。
 var (
-	ErrNotFound        = errors.New("agentflow/storage: not found")
-	ErrVersionConflict = errors.New("agentflow/storage: base version conflict")
-	ErrDuplicate       = errors.New("agentflow/storage: duplicate")
+	ErrNotFound        = errors.New("github.com/qisanfen666/agentflow/storage: not found")
+	ErrVersionConflict = errors.New("github.com/qisanfen666/agentflow/storage: base version conflict")
+	ErrDuplicate       = errors.New("github.com/qisanfen666/agentflow/storage: duplicate")
 )
 
 // AgentStore 负责 AgentSpec 的存储与版本语义。

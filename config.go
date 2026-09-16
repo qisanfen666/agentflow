@@ -11,6 +11,7 @@ type Config struct {
 	Server        ServerConfig        `yaml:"server" json:"server"`
 	Storage       StorageConfig       `yaml:"storage" json:"storage"`
 	Queue         QueueConfig         `yaml:"queue" json:"queue"`
+	Runtimes      []string            `yaml:"runtimes" json:"runtimes"` // 启用的执行环境，默认 ["python-http"]；docker 需显式加并配 Sandbox
 	Sandbox       SandboxConfig       `yaml:"sandbox" json:"sandbox"`
 	Auth          AuthConfig          `yaml:"auth" json:"auth"`
 	Observability ObservabilityConfig `yaml:"observability" json:"observability"`

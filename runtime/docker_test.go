@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // fakeRunner 记录全部命令调用；hook 可按需返回特定输出/错误。

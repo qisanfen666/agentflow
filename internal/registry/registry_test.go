@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"agentflow/model"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 func newRegistry() *Registry {

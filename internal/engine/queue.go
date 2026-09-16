@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // Queue 是 engine 消费任务所需的队列合同（可靠队列语义）。

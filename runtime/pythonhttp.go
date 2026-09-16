@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // PythonHTTP 是 python-http Runtime：HTTP 直连外部 Agent。

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"agentflow/model"
+	"github.com/qisanfen666/agentflow/model"
 )
 
 // 编译期接口实现检查。
@@ -20,7 +20,7 @@ var (
 )
 
 // errTaskMustBePending Create 只接受 pending 状态的新任务。
-var errTaskMustBePending = errors.New("agentflow/storage: task must be pending on create")
+var errTaskMustBePending = errors.New("github.com/qisanfen666/agentflow/storage: task must be pending on create")
 
 // newID 生成带前缀的短随机 ID，如 "a_3f9a2c1d"。
 // 4 字节 crypto/rand = 8 个十六进制字符，演示场景碰撞概率足够低；

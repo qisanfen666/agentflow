@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"agentflow/model"
-	"agentflow/runtime"
-	"agentflow/storage"
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/runtime"
+	"github.com/qisanfen666/agentflow/storage"
 )
 
 // DefaultMaxRetries 可重试错误的默认最大重试次数（首跑 + 3 次重试）。
