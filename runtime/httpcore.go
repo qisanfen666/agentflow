@@ -10,6 +10,11 @@ import (
 	"net/http"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/qisanfen666/agentflow/model"
 )
 
@@ -21,9 +26,16 @@ import (
 // doneSentinel SSE 流结束标记（沿用 OpenAI 流式惯例，见协议文档第 6 节）。
 const doneSentinel = "[DONE]"
 
+// httpTracer 出站调用 span 命名空间。
+var httpTracer = otel.Tracer("agentflow/runtime")
+
 // httpDoStream 对 url 发起 SSE 请求并解析事件流写入 ch。
 // 错误一律以 EventError 投递（"错误即事件"契约），随后由调用方关通道。
 func httpDoStream(ctx context.Context, client *http.Client, url string, reqBody []byte, ch chan<- Event) {
+	ctx, span := httpTracer.Start(ctx, "agent.http POST /run/stream",
+		trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
 	if err != nil {
 		fail(ch, model.ErrAgentUnreachable, err)
@@ -31,18 +43,23 @@ func httpDoStream(ctx context.Context, client *http.Client, url string, reqBody 
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
+	// W3C traceparent 注入：执行面 Agent 拿到即可把自身 span 挂进同一条链路
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(httpReq.Header))
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		// 区分"超时/取消"与"连不上"：前者是 AGENT_TIMEOUT（可重试语义不同）
 		if ctx.Err() != nil {
+			span.SetAttributes(attribute.String("error", model.ErrAgentTimeout))
 			fail(ch, model.ErrAgentTimeout, ctx.Err())
 		} else {
+			span.SetAttributes(attribute.String("error", model.ErrAgentUnreachable))
 			fail(ch, model.ErrAgentUnreachable, err)
 		}
 		return
 	}
 	defer resp.Body.Close()
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 
 	switch {
 	case resp.StatusCode >= 500:

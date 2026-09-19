@@ -11,11 +11,18 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
 	"github.com/qisanfen666/agentflow/storage"
 )
+
+// dispTracer 执行编排 span 命名空间。
+var dispTracer = otel.Tracer("agentflow/dispatch")
 
 // DefaultMaxRetries 可重试错误的默认最大重试次数（首跑 + 3 次重试）。
 const DefaultMaxRetries = 3
@@ -179,6 +186,20 @@ func (d *Dispatcher) Execute(task model.Task) error {
 		Detail: map[string]any{"attempt": task.AttemptCount, "agent_version": task.AgentVersion},
 	})
 	startedAt := time.Now()
+
+	// 执行链路 span。API 与 worker 之间隔着队列（链路天然断开），此处是新链路的根；
+	// 出站请求会注入 traceparent，执行面 Agent 继续上报即接续成全链路。
+	ctx, span := dispTracer.Start(ctx, "task.execute",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("task.id", task.ID),
+			attribute.String("agent.id", task.AgentID),
+			attribute.Int("task.attempt", task.AttemptCount),
+		))
+	defer func() {
+		span.SetAttributes(attribute.String("task.final_status", string(task.Status)))
+		span.End()
+	}()
 
 	spec, err := d.agents.GetVersion(ctx, task.AgentID, task.AgentVersion)
 	if err != nil {

@@ -7,6 +7,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
@@ -42,10 +46,31 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	return r
 }
 
+// trace 根 span 中间件：提取入站 traceparent -> 开 SERVER span -> 请求 ctx 携带。
+// 未启用 tracing 时（全局 Noop provider）span.Start 近似空操作。
+// 观测中间件是"不挂业务中间件"约定的显式例外：链路提取必须在最外层。
+var apiTracer = otel.Tracer("agentflow/api")
+
+func traceMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := otel.GetTextMapPropagator().Extract(
+			c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
+		ctx, span := apiTracer.Start(ctx, "http "+c.Request.Method+" "+c.FullPath(),
+			trace.WithSpanKind(trace.SpanKindServer))
+		defer span.End()
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+		if span.IsRecording() {
+			span.SetAttributes(attribute.Int("http.response.status_code", c.Writer.Status()))
+		}
+	}
+}
+
 // MountRoutes 把全部端点注册到既有 engine / router group（嵌入模式）。
 // 不挂任何中间件：日志/认证/CORS 等横切关注点由宿主自行决定。
 // deps.Metrics 非 nil 时额外挂 GET /metrics（Prometheus 抓取端点）。
 func MountRoutes(r gin.IRouter, deps Dependencies) {
+	r.Use(traceMiddleware())
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})

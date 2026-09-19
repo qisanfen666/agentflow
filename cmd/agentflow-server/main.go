@@ -10,6 +10,8 @@
 //	AGENTFLOW_VISIBILITY_SEC 在途租约/可见性超时秒数（默认 300）
 //	AGENTFLOW_AUDIT_LOG_PATH 审计日志路径（空 = 关闭审计）
 //	AGENTFLOW_METRICS_ENABLED 置 1 启用 /metrics（Prometheus）
+//	AGENTFLOW_SERVICE_NAME    OTel 服务名（默认 agentflow）
+//	AGENTFLOW_OTLP_ENDPOINT   OTLP gRPC 地址（如 localhost:4317；空 = 关闭追踪）
 package main
 
 import (
@@ -64,6 +66,8 @@ func main() {
 		Observability: agentflow.ObservabilityConfig{
 			AuditLogPath:   env("AGENTFLOW_AUDIT_LOG_PATH", ""),
 			MetricsEnabled: env("AGENTFLOW_METRICS_ENABLED", "") == "1",
+			ServiceName:    env("AGENTFLOW_SERVICE_NAME", "agentflow"),
+			OTLPEndpoint:   env("AGENTFLOW_OTLP_ENDPOINT", ""),
 		},
 		Runtimes: []string{model.RuntimePythonHTTP, model.RuntimeDocker},
 		Sandbox: agentflow.SandboxConfig{

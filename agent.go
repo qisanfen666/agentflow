@@ -46,7 +46,8 @@ type Panel struct {
 
 	httpSrv *http.Server
 
-	auditCloser io.Closer // 审计日志文件句柄，Stop 时关闭
+	auditCloser   io.Closer                   // 审计日志文件句柄，Stop 时关闭
+	traceShutdown func(context.Context) error // OTel provider flush，Stop 时调用
 
 	mu         sync.Mutex
 	started    bool
@@ -123,6 +124,14 @@ func New(cfg Config) (*Panel, error) {
 	if p.cfg.Observability.MetricsEnabled {
 		tel.Metrics = observability.NewMetrics()
 	}
+	shutdown, err := observability.SetupTracing(observability.TraceConfig{
+		ServiceName:  p.cfg.Observability.ServiceName,
+		OTLPEndpoint: p.cfg.Observability.OTLPEndpoint,
+	})
+	if err != nil {
+		return nil, err
+	}
+	p.traceShutdown = shutdown
 
 	hub := dispatch.NewHub()
 	dispatcher := dispatch.New(agents, tasks, hub, tel, runtimes...)
@@ -213,6 +222,16 @@ func (p *Panel) Stop(ctx context.Context) error {
 	}
 	if p.auditCloser != nil {
 		_ = p.auditCloser.Close()
+	}
+	if p.traceShutdown != nil {
+		shutdownCtx := ctx
+		if _, ok := ctx.Deadline(); !ok {
+			// 无截止时间的调用方给一个 flush 窗口，避免导出器永久挂起
+			var cancel context.CancelFunc
+			shutdownCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+		}
+		_ = p.traceShutdown(shutdownCtx)
 	}
 	if p.rdb != nil {
 		_ = p.rdb.Close()
