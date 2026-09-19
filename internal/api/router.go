@@ -31,12 +31,17 @@ type handlers struct {
 	deps Dependencies
 }
 
-// NewRouter 构建 gin 引擎。gin.SetMode 由调用方决定（测试用 TestMode）。
+// NewRouter 构建独立 gin 引擎（自带 Recovery）。gin.SetMode 由调用方决定。
 func NewRouter(deps Dependencies) *gin.Engine {
 	r := gin.New()
-	// 只挂 Recovery：日志/认证/CORS 属横切关注点，由 facade 按配置挂载
 	r.Use(gin.Recovery())
+	MountRoutes(r, deps)
+	return r
+}
 
+// MountRoutes 把全部端点注册到既有 engine / router group（嵌入模式）。
+// 不挂任何中间件：日志/认证/CORS 等横切关注点由宿主自行决定。
+func MountRoutes(r gin.IRouter, deps Dependencies) {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
@@ -45,7 +50,6 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	registerAgentRoutes(r, h) // 定义于 agent_handler.go
 	registerTaskRoutes(r, h)  // 定义于 task_handler.go
 	registerToolRoutes(r, h)  // 定义于 tool_handler.go
-	return r
 }
 
 // ---------- 错误响应统一映射 ----------

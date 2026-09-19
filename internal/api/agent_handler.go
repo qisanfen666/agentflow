@@ -9,7 +9,7 @@ import (
 )
 
 // registerAgentRoutes 注册 Agent 域 6 端点（合同：openapi.yaml /api/v1/agents*）。
-func registerAgentRoutes(r *gin.Engine, h *handlers) {
+func registerAgentRoutes(r gin.IRouter, h *handlers) {
 	g := r.Group("/api/v1/agents")
 	g.POST("", h.createAgent)
 	g.GET("", h.listAgents)

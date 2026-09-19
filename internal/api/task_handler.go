@@ -12,7 +12,7 @@ import (
 )
 
 // registerTaskRoutes 注册 Task 域 4 端点（合同：openapi.yaml /api/v1/tasks*）。
-func registerTaskRoutes(r *gin.Engine, h *handlers) {
+func registerTaskRoutes(r gin.IRouter, h *handlers) {
 	g := r.Group("/api/v1/tasks")
 	g.POST("", h.submitTask)
 	g.GET("/:id", h.getTask)

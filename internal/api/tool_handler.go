@@ -13,7 +13,7 @@ import (
 	"github.com/qisanfen666/agentflow/storage"
 )
 
-func registerToolRoutes(r *gin.Engine, h *handlers) {
+func registerToolRoutes(r gin.IRouter, h *handlers) {
 	r.POST("/api/v1/tools", h.registerTool)
 	r.GET("/api/v1/tools", h.listTools)
 	// /tools/mcp 与 /tools/:id 同段静态+参数并存，gin 按静态优先匹配
