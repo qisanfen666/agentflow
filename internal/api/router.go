@@ -26,6 +26,7 @@ type Dependencies struct {
 	Idem       storage.IdemStore         // 提交幂等占位（memory / redis 双实现）
 	Tools      *registry.Registry        // M3：工具注册表（校验 + MCP 导出）
 	Audit      observability.AuditLogger // M5：API 层审计（创建/更新/删除/提交/取消）；nil = 关闭
+	Metrics    *observability.Metrics    // M5：非 nil 时挂 GET /metrics
 }
 
 // handlers 共享依赖的 handler 集合。各端点方法分属 agent_handler.go / task_handler.go。
@@ -43,10 +44,14 @@ func NewRouter(deps Dependencies) *gin.Engine {
 
 // MountRoutes 把全部端点注册到既有 engine / router group（嵌入模式）。
 // 不挂任何中间件：日志/认证/CORS 等横切关注点由宿主自行决定。
+// deps.Metrics 非 nil 时额外挂 GET /metrics（Prometheus 抓取端点）。
 func MountRoutes(r gin.IRouter, deps Dependencies) {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	if deps.Metrics != nil {
+		r.GET("/metrics", gin.WrapH(deps.Metrics.Handler()))
+	}
 
 	h := &handlers{deps: deps}
 	registerAgentRoutes(r, h) // 定义于 agent_handler.go

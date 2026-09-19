@@ -55,7 +55,7 @@ func setupAPI(t *testing.T, rt runtime.Runtime) *httptest.Server {
 	agents := storage.NewMemoryAgentStore()
 	tasks := storage.NewMemoryTaskStore()
 	hub := dispatch.NewHub()
-	d := dispatch.New(agents, tasks, hub, nil, rt)
+	d := dispatch.New(agents, tasks, hub, observability.Telemetry{}, rt)
 	queue := engine.NewMemoryQueue()
 	worker := engine.NewWorker(queue, d, tasks, engine.WorkerConfig{RetryBackoffBase: 10 * time.Millisecond})
 	stop := worker.Start(context.Background())
@@ -419,7 +419,7 @@ func TestAuditTrailForAPI(t *testing.T) {
 	tasks := storage.NewMemoryTaskStore()
 	hub := dispatch.NewHub()
 	rt := &scriptedRuntime{events: []runtime.Event{{Type: runtime.EventDone, TaskID: "t"}}}
-	d := dispatch.New(agents, tasks, hub, audit, rt)
+	d := dispatch.New(agents, tasks, hub, observability.Telemetry{Audit: audit}, rt)
 	queue := engine.NewMemoryQueue()
 	worker := engine.NewWorker(queue, d, tasks, engine.WorkerConfig{RetryBackoffBase: 10 * time.Millisecond})
 	stop := worker.Start(context.Background())

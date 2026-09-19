@@ -49,7 +49,7 @@ func setupWithAudit(t *testing.T, rt runtime.Runtime, audit observability.AuditL
 	agents := storage.NewMemoryAgentStore()
 	tasks := storage.NewMemoryTaskStore()
 	hub := NewHub()
-	d := New(agents, tasks, hub, audit, rt)
+	d := New(agents, tasks, hub, observability.Telemetry{Audit: audit}, rt)
 
 	spec, err := agents.Create(ctx, model.AgentSpec{
 		Name:    "fake-agent",

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/qisanfen666/agentflow/internal/dispatch"
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
 	"github.com/qisanfen666/agentflow/storage"
@@ -57,7 +58,7 @@ func setupEngine(t *testing.T, rt runtime.Runtime, cfg WorkerConfig) (engineDeps
 	agents := storage.NewMemoryAgentStore()
 	tasks := storage.NewMemoryTaskStore()
 	hub := dispatch.NewHub()
-	d := dispatch.New(agents, tasks, hub, nil, rt)
+	d := dispatch.New(agents, tasks, hub, observability.Telemetry{}, rt)
 	q := NewMemoryQueue()
 	w := NewWorker(q, d, tasks, cfg)
 	stop := w.Start(ctx)

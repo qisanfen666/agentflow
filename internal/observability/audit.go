@@ -46,6 +46,13 @@ type AuditLogger interface {
 	Record(ctx context.Context, ev AuditEvent) error
 }
 
+// Telemetry 聚合观测组件，随组件构造注入。字段均可为零值（nil = 未启用），
+// 埋点路径全部 nil-safe。
+type Telemetry struct {
+	Audit   AuditLogger
+	Metrics *Metrics
+}
+
 // RecordBestEffort 尽力审计：写失败只记日志，不阻断业务主流程——
 // 审计是旁路观测，不能因它把任务链路打挂。nil 容忍（未配置即关闭）。
 func RecordBestEffort(l AuditLogger, ctx context.Context, ev AuditEvent) {

@@ -124,7 +124,7 @@ type Dispatcher struct {
 	agents   storage.AgentStore
 	tasks    storage.TaskStore
 	hub      *Hub
-	audit    observability.AuditLogger // 执行链路审计（task_started/retry/终态）；可为 nil
+	tel      observability.Telemetry // 审计 + 指标（字段可零值 = 未启用）
 
 	// MaxRetries 可重试错误的次数上限；超过则落终态。
 	// 默认 DefaultMaxRetries，wiring 时由 queue 配置覆盖。
@@ -135,13 +135,13 @@ type Dispatcher struct {
 }
 
 // New 创建分发器，rts 至少要有一个；重复 Type() 以后注册者胜。
-func New(agents storage.AgentStore, tasks storage.TaskStore, hub *Hub, audit observability.AuditLogger, rts ...runtime.Runtime) *Dispatcher {
+func New(agents storage.AgentStore, tasks storage.TaskStore, hub *Hub, tel observability.Telemetry, rts ...runtime.Runtime) *Dispatcher {
 	d := &Dispatcher{
 		runtimes:   make(map[string]runtime.Runtime),
 		agents:     agents,
 		tasks:      tasks,
 		hub:        hub,
-		audit:      audit,
+		tel:        tel,
 		MaxRetries: DefaultMaxRetries,
 		cancels:    make(map[string]context.CancelFunc),
 	}
@@ -174,18 +174,19 @@ func (d *Dispatcher) Execute(task model.Task) error {
 		}
 		return fmt.Errorf("save running task: %w", err)
 	}
-	observability.RecordBestEffort(d.audit, ctx, observability.AuditEvent{
+	observability.RecordBestEffort(d.tel.Audit, ctx, observability.AuditEvent{
 		Action: observability.ActionTaskStarted, Entity: observability.EntityTask, EntityID: task.ID,
 		Detail: map[string]any{"attempt": task.AttemptCount, "agent_version": task.AgentVersion},
 	})
+	startedAt := time.Now()
 
 	spec, err := d.agents.GetVersion(ctx, task.AgentID, task.AgentVersion)
 	if err != nil {
-		return d.finalize(&task, &model.TaskError{Code: model.ErrInvalidPayload, Message: "agent version not found"})
+		return d.finalize(&task, &model.TaskError{Code: model.ErrInvalidPayload, Message: "agent version not found"}, startedAt)
 	}
 	rt, ok := d.runtimes[spec.Runtime.Type]
 	if !ok {
-		return d.finalize(&task, &model.TaskError{Code: model.ErrInternal, Message: "no runtime registered for type " + spec.Runtime.Type})
+		return d.finalize(&task, &model.TaskError{Code: model.ErrInternal, Message: "no runtime registered for type " + spec.Runtime.Type}, startedAt)
 	}
 
 	timeout := time.Duration(task.TimeoutSec) * time.Second
@@ -216,6 +217,7 @@ func (d *Dispatcher) Execute(task model.Task) error {
 			if ev.Model != "" {
 				task.Usage.Model = ev.Model
 			}
+			d.tel.Metrics.AddTokens(ev.PromptTokens, ev.CompletionTokens, ev.Model)
 		case runtime.EventDone:
 			_ = task.Transition(model.TaskSucceeded) // 已取消时拒绝，忽略
 		case runtime.EventError:
@@ -233,10 +235,11 @@ func (d *Dispatcher) Execute(task model.Task) error {
 						}
 						return fmt.Errorf("save retryable task: %w", err)
 					}
-					observability.RecordBestEffort(d.audit, ctx, observability.AuditEvent{
+					observability.RecordBestEffort(d.tel.Audit, ctx, observability.AuditEvent{
 						Action: observability.ActionTaskRetry, Entity: observability.EntityTask, EntityID: task.ID,
 						Detail: map[string]any{"attempt": task.AttemptCount, "error_code": ev.Code},
 					})
+					d.tel.Metrics.IncRetry()
 					return &RetryableError{Code: ev.Code, Attempt: task.AttemptCount}
 				}
 				// 迁移失败（已被取消）：落入终态路径
@@ -253,14 +256,14 @@ func (d *Dispatcher) Execute(task model.Task) error {
 	}
 	// 通道关闭但任务仍非终态：Runtime 违反"错误即事件"契约（如已被取消）
 	if !task.Status.Final() {
-		return d.finalize(&task, &model.TaskError{Code: model.ErrAgentProtocolViolation, Message: "runtime closed stream without terminal event"})
+		return d.finalize(&task, &model.TaskError{Code: model.ErrAgentProtocolViolation, Message: "runtime closed stream without terminal event"}, startedAt)
 	}
-	return d.finalize(&task, nil)
+	return d.finalize(&task, nil, startedAt)
 }
 
 // finalize 落终态并关闭事件流。te 非 nil 时（内部失败路径）补发一个 error 事件再结束，
 // 保证订阅者视角"必有终止信号"。返回 nil（终态即成功处理的 Ack 依据）或内部错误。
-func (d *Dispatcher) finalize(task *model.Task, te *model.TaskError) error {
+func (d *Dispatcher) finalize(task *model.Task, te *model.TaskError, startedAt time.Time) error {
 	if te != nil {
 		task.Error = te
 		_ = task.Transition(model.TaskFailed)
@@ -274,15 +277,19 @@ func (d *Dispatcher) finalize(task *model.Task, te *model.TaskError) error {
 		}
 		return fmt.Errorf("save final task: %w", err)
 	}
-	d.auditFinal(*task)
+	d.recordFinal(*task, startedAt)
 	d.hub.Finish(task.ID)
 	return nil
 }
 
-// auditFinal 终态审计。succeeded 带 usage 汇总，failed/timeout 带 error_code——
-// 审计视角看：一次执行结束时的"结果摘要"。取消先落的冲突路径不在此列
+// recordFinal 终态观测：审计事件 + 指标（终态计数、单次执行耗时）。
+// succeeded 审计带 usage 汇总，failed/timeout 带 error_code——审计视角看：
+// 一次执行结束时的"结果摘要"。取消先落的冲突路径不在此列
 // （task_cancelled 由 API 层记录）。
-func (d *Dispatcher) auditFinal(task model.Task) {
+func (d *Dispatcher) recordFinal(task model.Task, startedAt time.Time) {
+	d.tel.Metrics.IncTask(string(task.Status))
+	d.tel.Metrics.ObserveDuration(time.Since(startedAt))
+
 	ev := observability.AuditEvent{Entity: observability.EntityTask, EntityID: task.ID}
 	switch task.Status {
 	case model.TaskSucceeded:
@@ -305,7 +312,7 @@ func (d *Dispatcher) auditFinal(task model.Task) {
 	default:
 		return // cancelled 等非本路径终态：审计归属 API 层
 	}
-	observability.RecordBestEffort(d.audit, context.Background(), ev)
+	observability.RecordBestEffort(d.tel.Audit, context.Background(), ev)
 }
 
 func errorCode(task model.Task) string {

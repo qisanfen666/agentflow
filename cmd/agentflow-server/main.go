@@ -9,6 +9,7 @@
 //	AGENTFLOW_REDIS_DB       Redis DB（默认 0）
 //	AGENTFLOW_VISIBILITY_SEC 在途租约/可见性超时秒数（默认 300）
 //	AGENTFLOW_AUDIT_LOG_PATH 审计日志路径（空 = 关闭审计）
+//	AGENTFLOW_METRICS_ENABLED 置 1 启用 /metrics（Prometheus）
 package main
 
 import (
@@ -61,7 +62,8 @@ func main() {
 			VisibilityTimeoutSec: intEnv("AGENTFLOW_VISIBILITY_SEC", 300),
 		},
 		Observability: agentflow.ObservabilityConfig{
-			AuditLogPath: env("AGENTFLOW_AUDIT_LOG_PATH", ""),
+			AuditLogPath:   env("AGENTFLOW_AUDIT_LOG_PATH", ""),
+			MetricsEnabled: env("AGENTFLOW_METRICS_ENABLED", "") == "1",
 		},
 		Runtimes: []string{model.RuntimePythonHTTP, model.RuntimeDocker},
 		Sandbox: agentflow.SandboxConfig{
