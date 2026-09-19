@@ -178,6 +178,40 @@ paths:
         "200": { description: 校验通过, content: { application/json: { schema: { type: object, properties: { valid: { type: boolean } } } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/tools/mcp:
+    get:
+      tags: [tools]
+      summary: 全量工具导出为 MCP tools 清单
+      responses:
+        "200":
+          description: MCP tools 数组
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools:
+                    type: array
+                    items: { $ref: "#/components/schemas/MCPTool" }
+
+  /api/v1/tools/{id}/mcp:
+    get:
+      tags: [tools]
+      summary: 单个工具导出为 MCP function 定义
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: MCP function 定义
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPTool" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     APIKeyAuth:
@@ -275,3 +309,18 @@ components:
         name: { type: string }
         description: { type: string }
         parameters: { type: object, description: JSON Schema（draft 2020-12 子集） }
+        timeout_sec: { type: integer, description: 工具执行超时（秒） }
+
+    MCPTool:
+      type: object
+      description: MCP（Model Context Protocol）function 定义格式
+      required: [type, function]
+      properties:
+        type: { type: string, example: function }
+        function:
+          type: object
+          required: [name, parameters]
+          properties:
+            name: { type: string }
+            description: { type: string }
+            parameters: { type: object, description: JSON Schema }
