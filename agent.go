@@ -44,10 +44,13 @@ type Panel struct {
 
 	httpSrv *http.Server
 
-	mu        sync.Mutex
-	started   bool
-	stopped   bool
-	stopMover func() // Start 时由 redisQueue.Start 填充
+	mu         sync.Mutex
+	started    bool
+	stopped    bool
+	runCancel  context.CancelFunc // worker/mover 的生命周期根
+	runCtx     context.Context
+	stopWorker func() // 停止并等待 worker 全部协程
+	stopMover  func() // 停止 delayed->ready 搬运协程（Redis 模式）
 }
 
 // New 按配置装配控制面。只做构建与连通性检查，不启动任何 goroutine——
@@ -140,10 +143,12 @@ func (p *Panel) Start(ctx context.Context) error {
 	if p.cfg.Server.Mode != "" {
 		gin.SetMode(p.cfg.Server.Mode)
 	}
+	// 生命周期根 ctx：派生自调用方 ctx（取消会传导），Stop 时统一回收
+	p.runCtx, p.runCancel = context.WithCancel(ctx)
 	if p.redisQueue != nil {
-		p.stopMover = p.redisQueue.Start(ctx)
+		p.stopMover = p.redisQueue.Start(p.runCtx)
 	}
-	p.worker.Start(ctx)
+	p.stopWorker = p.worker.Start(p.runCtx)
 
 	if addr := p.cfg.Server.Addr; addr != "" {
 		p.httpSrv = &http.Server{Addr: addr, Handler: p.route}
@@ -176,8 +181,14 @@ func (p *Panel) Stop(ctx context.Context) error {
 			firstErr = fmt.Errorf("http shutdown: %w", err)
 		}
 	}
+	if p.stopWorker != nil {
+		p.stopWorker() // cancel + 等待全部消费/回收协程退出
+	}
 	if p.stopMover != nil {
 		p.stopMover()
+	}
+	if p.runCancel != nil {
+		p.runCancel()
 	}
 	if p.rdb != nil {
 		_ = p.rdb.Close()
@@ -188,6 +199,9 @@ func (p *Panel) Stop(ctx context.Context) error {
 // Router 返回装配完成的 gin 引擎，供调用方自行托管（自定义端口/TLS/中间件）。
 // 与 Mount 二选一；Router 返回的引擎与 Start 内部监听用的是同一个。
 func (p *Panel) Router() *gin.Engine { return p.route }
+
+// Config 返回生效配置（默认值填充后的最终形态，排查配置问题用）。
+func (p *Panel) Config() Config { return p.cfg }
 
 // Mount 把控制面端点注册进既有的 router group（嵌入模式）：
 //
