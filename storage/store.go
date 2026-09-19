@@ -53,6 +53,9 @@ type TaskStore interface {
 	Get(ctx context.Context, id string) (model.Task, error)
 
 	// Save 全量覆盖保存（状态迁移后调用）。
+	// 终态不可逆：已处于终态的任务拒绝被覆盖为其他状态，返回 ErrVersionConflict；
+	// 同终态重写放行（幂等）。该不变量由存储层原子保证——并发写者各持本地副本
+	// （如取消与执行收尾的竞态），调用方无法靠自查消除窗口。
 	Save(ctx context.Context, task model.Task) error
 }
 

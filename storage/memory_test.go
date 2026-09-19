@@ -19,6 +19,8 @@ func TestMemoryConcurrentUpdateAtomicity(t *testing.T) {
 
 func TestMemoryTaskBasics(t *testing.T) { runTaskBasics(t, memoryFactory) }
 
+func TestMemoryTaskFinalityGuard(t *testing.T) { runTaskFinalityGuard(t, memoryFactory) }
+
 func TestMemoryIdem(t *testing.T) {
 	runIdemSemantics(t, func(t *testing.T) IdemStore { return NewMemoryIdemStore() })
 }

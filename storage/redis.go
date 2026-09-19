@@ -77,16 +77,6 @@ end
 redis.call('SET', KEYS[2], ARGV[1])
 return 1
 `)
-
-	redisSaveTaskScript = redis.NewScript(`
--- KEYS: [taskKey]
--- ARGV: [taskJSON]
-if redis.call('EXISTS', KEYS[1]) == 0 then
-  return 0
-end
-redis.call('SET', KEYS[1], ARGV[1])
-return 1
-`)
 )
 
 // RedisAgentStore 是 AgentStore 的 Redis 实现（持久化、跨进程）。
@@ -288,19 +278,33 @@ func (s *RedisTaskStore) Get(ctx context.Context, id string) (model.Task, error)
 	return task, nil
 }
 
+// Save 用 WATCH 乐观事务实现"读旧值 -> 判终态 -> 写新值"的原子序列。
+// 为什么不用 Lua：判定依据是 JSON 里的 status 字段，Lua 内解析 JSON 不便；
+// WATCH 是读-判-写场景的标准解法，读后被并发修改会让事务失败（TxFailedErr），
+// 此时返回错误交由上层重试路径兜底，不做自动循环。
 func (s *RedisTaskStore) Save(ctx context.Context, task model.Task) error {
 	data, err := json.Marshal(task)
 	if err != nil {
 		return err
 	}
-	res, err := redisSaveTaskScript.Run(ctx, s.client, []string{taskKey(task.ID)}, string(data)).Int()
-	if err != nil {
-		return err
-	}
-	if res == 0 {
-		return ErrNotFound
-	}
-	return nil
+	key := taskKey(task.ID)
+	return s.client.Watch(ctx, func(tx *redis.Tx) error {
+		raw, err := tx.Get(ctx, key).Bytes()
+		if errors.Is(err, redis.Nil) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		var cur model.Task
+		if err := json.Unmarshal(raw, &cur); err != nil {
+			return err
+		}
+		if cur.Status.Final() && cur.Status != task.Status {
+			return ErrVersionConflict
+		}
+		return tx.Set(ctx, key, data, 0).Err()
+	}, key)
 }
 
 // ---------- IdemStore Redis 实现 ----------

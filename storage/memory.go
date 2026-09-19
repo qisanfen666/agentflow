@@ -193,8 +193,12 @@ func (s *MemoryTaskStore) Get(_ context.Context, id string) (model.Task, error) 
 func (s *MemoryTaskStore) Save(_ context.Context, task model.Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.tasks[task.ID]; !ok {
+	cur, ok := s.tasks[task.ID]
+	if !ok {
 		return ErrNotFound
+	}
+	if cur.Status.Final() && cur.Status != task.Status {
+		return ErrVersionConflict
 	}
 	s.tasks[task.ID] = task
 	return nil

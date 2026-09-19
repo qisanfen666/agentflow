@@ -63,6 +63,8 @@ func TestRedisConcurrentUpdateAtomicity(t *testing.T) { runConcurrentUpdateAtomi
 
 func TestRedisTaskBasics(t *testing.T) { runTaskBasics(t, redisFactory) }
 
+func TestRedisTaskFinalityGuard(t *testing.T) { runTaskFinalityGuard(t, redisFactory) }
+
 func TestRedisIdem(t *testing.T) {
 	c := redisTestClient(t)
 	runIdemSemantics(t, func(t *testing.T) IdemStore { return NewRedisIdemStore(c) })

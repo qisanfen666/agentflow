@@ -1,4 +1,4 @@
-﻿﻿# M1 冒烟测试：覆盖 11 个端点的核心行为
+﻿# M1 冒烟测试：覆盖 11 个端点的核心行为
 # 用法: ./scripts/smoke-m1.ps1 [-Server http://localhost:8080]
 param([string]$Server = "http://localhost:18080")
 $ErrorActionPreference = "Stop"
@@ -28,7 +28,7 @@ Check ($h.status -eq "ok") "GET /health -> ok" "health 异常: $($h.status)"
 
 # ---------- Agent CRUD + 乐观锁 ----------
 Step "创建 Agent"
-$agentBody = @{ name = "demo"; type = "chat"; runtime = @{ type = "python-http"; host = "http://agent:8081" } }
+$agentBody = @{ name = "demo"; type = "chat"; runtime = @{ type = "python-http"; host = "http://localhost:8081" } }
 $agent = Invoke-RestMethod -Method Post "$Server/api/v1/agents" -ContentType "application/json" -Body ($agentBody | ConvertTo-Json -Depth 5)
 Check ($agent.id -and $agent.version -eq 1) "POST agents -> $($agent.id) v1" "创建失败"
 
@@ -74,7 +74,8 @@ Check ($final.status -eq "succeeded" -and $final.usage.prompt_tokens -eq 42 -and
 Step "错误分类: 连不上的 Agent -> AGENT_UNREACHABLE"
 $bad = Invoke-RestMethod -Method Post "$Server/api/v1/agents" -ContentType "application/json" -Body (@{ name = "bad"; type = "chat"; runtime = @{ type = "python-http"; host = "http://127.0.0.1:9" } } | ConvertTo-Json -Depth 5)
 $badTask = Invoke-RestMethod -Method Post "$Server/api/v1/tasks" -ContentType "application/json" -Body (@{ agent_id = $bad.id; payload = @{} } | ConvertTo-Json)
-$badFinal = WaitStatus $badTask.id "failed"
+# AGENT_UNREACHABLE 可重试：3 次退避 1+4+9=14s+，窗口给足 30s
+$badFinal = WaitStatus $badTask.id "failed" 30
 Check ($badFinal.status -eq "failed" -and $badFinal.error.code -eq "AGENT_UNREACHABLE") "failed / AGENT_UNREACHABLE" "错误路径异常: $($badFinal.status) $($badFinal.error.code)"
 
 # ---------- 取消路径 ----------

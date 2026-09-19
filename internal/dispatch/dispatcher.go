@@ -6,6 +6,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -164,6 +165,10 @@ func (d *Dispatcher) Execute(task model.Task) error {
 	}
 	if err := d.tasks.Save(ctx, task); err != nil {
 		d.hub.Finish(task.ID)
+		if errors.Is(err, storage.ErrVersionConflict) {
+			// 领取后即被并发取消：终态先落者胜，放弃本次执行
+			return nil
+		}
 		return fmt.Errorf("save running task: %w", err)
 	}
 
@@ -214,6 +219,11 @@ func (d *Dispatcher) Execute(task model.Task) error {
 				// defer cancel() 会终止 runCtx，Runtime 侧 goroutine 随之收尾，不泄漏。
 				if err := task.Transition(model.TaskPending); err == nil {
 					if err := d.tasks.Save(ctx, task); err != nil {
+						if errors.Is(err, storage.ErrVersionConflict) {
+							// 回退前已被并发取消：终态先落者胜，收尾退出
+							d.hub.Finish(task.ID)
+							return nil
+						}
 						return fmt.Errorf("save retryable task: %w", err)
 					}
 					return &RetryableError{Code: ev.Code, Attempt: task.AttemptCount}
@@ -247,6 +257,10 @@ func (d *Dispatcher) finalize(task *model.Task, te *model.TaskError) error {
 	}
 	if err := d.tasks.Save(context.Background(), *task); err != nil {
 		d.hub.Finish(task.ID)
+		if errors.Is(err, storage.ErrVersionConflict) {
+			// 并发取消已把终态落进存储：本地副本的终态不覆盖，取消先落者胜
+			return nil
+		}
 		return fmt.Errorf("save final task: %w", err)
 	}
 	d.hub.Finish(task.ID)

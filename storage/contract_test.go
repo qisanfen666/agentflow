@@ -160,6 +160,51 @@ func runTaskBasics(t *testing.T, mk storeFactory) {
 	}
 }
 
+// runTaskFinalityGuard 终态不可逆：已终态的任务拒绝被覆盖为其他状态，
+// 同终态重写放行。守护"取消 vs 执行收尾"竞态——并发写者各持分叉的本地副本，
+// 后落库者不得复活已终态的任务（否则被取消的任务会重试重跑）。
+func runTaskFinalityGuard(t *testing.T, mk storeFactory) {
+	_, s := mk(t)
+	ctx := context.Background()
+
+	created, err := s.Create(ctx, model.Task{Status: model.TaskPending, AgentID: "a_x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 复刻竞态：两个写者从同一 running 副本分叉
+	runner := created // 执行侧副本（dispatcher）
+	if err := runner.Transition(model.TaskRunning); err != nil {
+		t.Fatal(err)
+	}
+	cancelled := runner // 取消侧副本（handler Get 到的正是 running）
+	if err := cancelled.Transition(model.TaskCancelled); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(ctx, cancelled); err != nil {
+		t.Fatal(err)
+	}
+
+	// 执行侧本地仍是 running：回退 pending（状态机合法，为崩溃自愈设计），
+	// 但落库必须被存储层拒绝
+	if err := runner.Transition(model.TaskPending); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(ctx, runner); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("overwriting final task must conflict, got %v", err)
+	}
+
+	// 同终态重写放行（幂等）
+	if err := s.Save(ctx, cancelled); err != nil {
+		t.Fatalf("re-saving same final state must pass, got %v", err)
+	}
+
+	got, _ := s.Get(ctx, created.ID)
+	if got.Status != model.TaskCancelled {
+		t.Fatalf("cancelled task must stay cancelled, got %s", got.Status)
+	}
+}
+
 // idemFactory 每个测试拿到干净的幂等存储。
 type idemFactory func(t *testing.T) IdemStore
 
