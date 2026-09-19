@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/qisanfen666/agentflow/internal/api"
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/internal/registry"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
@@ -43,6 +45,8 @@ type Panel struct {
 	rdb        *redis.Client
 
 	httpSrv *http.Server
+
+	auditCloser io.Closer // 审计日志文件句柄，Stop 时关闭
 
 	mu         sync.Mutex
 	started    bool
@@ -105,8 +109,19 @@ func New(cfg Config) (*Panel, error) {
 		return nil, err
 	}
 
+	// 审计：配置路径即启用；文件打不开属启动失败，不带病运行
+	var audit observability.AuditLogger
+	if path := p.cfg.Observability.AuditLogPath; path != "" {
+		fl, err := observability.NewFileAuditLogger(path)
+		if err != nil {
+			return nil, fmt.Errorf("observability: 审计日志不可写 %s: %w", path, err)
+		}
+		p.auditCloser = fl
+		audit = fl
+	}
+
 	hub := dispatch.NewHub()
-	dispatcher := dispatch.New(agents, tasks, hub, runtimes...)
+	dispatcher := dispatch.New(agents, tasks, hub, audit, runtimes...)
 	reg := registry.New(tools)
 	worker := engine.NewWorker(queue, dispatcher, tasks, engine.WorkerConfig{
 		MaxRetries:       p.cfg.Queue.MaxRetries,
@@ -122,6 +137,7 @@ func New(cfg Config) (*Panel, error) {
 		Queue:      queue,
 		Idem:       idem,
 		Tools:      reg,
+		Audit:      audit,
 	}
 	p.route = api.NewRouter(p.deps)
 	return p, nil
@@ -189,6 +205,9 @@ func (p *Panel) Stop(ctx context.Context) error {
 	}
 	if p.runCancel != nil {
 		p.runCancel()
+	}
+	if p.auditCloser != nil {
+		_ = p.auditCloser.Close()
 	}
 	if p.rdb != nil {
 		_ = p.rdb.Close()

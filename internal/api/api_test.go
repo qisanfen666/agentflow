@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/internal/registry"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
@@ -53,7 +55,7 @@ func setupAPI(t *testing.T, rt runtime.Runtime) *httptest.Server {
 	agents := storage.NewMemoryAgentStore()
 	tasks := storage.NewMemoryTaskStore()
 	hub := dispatch.NewHub()
-	d := dispatch.New(agents, tasks, hub, rt)
+	d := dispatch.New(agents, tasks, hub, nil, rt)
 	queue := engine.NewMemoryQueue()
 	worker := engine.NewWorker(queue, d, tasks, engine.WorkerConfig{RetryBackoffBase: 10 * time.Millisecond})
 	stop := worker.Start(context.Background())
@@ -380,4 +382,94 @@ func get(srv *httptest.Server, path string) (*http.Response, string) {
 	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	return resp, string(raw)
+}
+
+// ---------- 审计 ----------
+
+// collectAudit 测试用审计收集器（与 dispatch 包的 bufAudit 同构，
+// 跨包测试内小重复可接受）。
+type collectAudit struct {
+	mu  sync.Mutex
+	evs []observability.AuditEvent
+}
+
+func (a *collectAudit) Record(_ context.Context, ev observability.AuditEvent) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.evs = append(a.evs, ev)
+	return nil
+}
+
+func (a *collectAudit) actions() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]string, len(a.evs))
+	for i, ev := range a.evs {
+		out[i] = ev.Action
+	}
+	return out
+}
+
+// TestAuditTrailForAPI 全链路审计：API 层（created/submitted）与执行层
+// （started/succeeded，由 worker goroutine 异步写入）在同一审计流里按序可见。
+func TestAuditTrailForAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	audit := &collectAudit{}
+	agents := storage.NewMemoryAgentStore()
+	tasks := storage.NewMemoryTaskStore()
+	hub := dispatch.NewHub()
+	rt := &scriptedRuntime{events: []runtime.Event{{Type: runtime.EventDone, TaskID: "t"}}}
+	d := dispatch.New(agents, tasks, hub, audit, rt)
+	queue := engine.NewMemoryQueue()
+	worker := engine.NewWorker(queue, d, tasks, engine.WorkerConfig{RetryBackoffBase: 10 * time.Millisecond})
+	stop := worker.Start(context.Background())
+	t.Cleanup(stop)
+	srv := httptest.NewServer(NewRouter(Dependencies{
+		Agents: agents, Tasks: tasks, Dispatcher: d, Hub: hub, Queue: queue,
+		Idem:  storage.NewMemoryIdemStore(),
+		Tools: registry.New(storage.NewMemoryToolStore()),
+		Audit: audit,
+	}))
+	t.Cleanup(srv.Close)
+
+	resp, body := postJSON(t, srv, "/api/v1/agents", map[string]any{
+		"name": "a", "type": "chat",
+		"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create agent: %d %s", resp.StatusCode, body)
+	}
+	var agent model.AgentSpec
+	json.Unmarshal([]byte(body), &agent)
+
+	resp, body = postJSON(t, srv, "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("submit task: %d %s", resp.StatusCode, body)
+	}
+	var task model.Task
+	json.Unmarshal([]byte(body), &task)
+
+	// 等 worker 侧审计落齐（异步）
+	want := []string{
+		observability.ActionAgentCreated,
+		observability.ActionTaskSubmitted,
+		observability.ActionTaskStarted,
+		observability.ActionTaskSucceeded,
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := audit.actions(); len(got) >= len(want) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	got := audit.actions()
+	if len(got) < len(want) {
+		t.Fatalf("audit trail incomplete: %v, want prefix %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("audit trail order = %v, want %v", got, want)
+		}
+	}
 }

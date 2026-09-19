@@ -3,9 +3,11 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
 	"github.com/qisanfen666/agentflow/storage"
@@ -38,12 +40,16 @@ func (f *fakeRuntime) Execute(ctx context.Context, _ runtime.Request) <-chan run
 }
 
 func setup(t *testing.T, rt runtime.Runtime) (*Dispatcher, storage.TaskStore, *Hub, model.Task) {
+	return setupWithAudit(t, rt, nil)
+}
+
+func setupWithAudit(t *testing.T, rt runtime.Runtime, audit observability.AuditLogger) (*Dispatcher, storage.TaskStore, *Hub, model.Task) {
 	t.Helper()
 	ctx := context.Background()
 	agents := storage.NewMemoryAgentStore()
 	tasks := storage.NewMemoryTaskStore()
 	hub := NewHub()
-	d := New(agents, tasks, hub, rt)
+	d := New(agents, tasks, hub, audit, rt)
 
 	spec, err := agents.Create(ctx, model.AgentSpec{
 		Name:    "fake-agent",
@@ -245,5 +251,102 @@ func TestHubBasics(t *testing.T) {
 		// close 后立即返回：订阅循环可自然终止
 	default:
 		t.Fatal("notify must be readable after finish")
+	}
+}
+
+// ---------- 审计埋点 ----------
+
+// bufAudit 测试用审计收集器。
+type bufAudit struct {
+	mu  sync.Mutex
+	evs []observability.AuditEvent
+}
+
+func (b *bufAudit) Record(_ context.Context, ev observability.AuditEvent) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.evs = append(b.evs, ev)
+	return nil
+}
+
+func (b *bufAudit) actions() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]string, len(b.evs))
+	for i, ev := range b.evs {
+		out[i] = ev.Action
+	}
+	return out
+}
+
+func (b *bufAudit) last() observability.AuditEvent {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.evs[len(b.evs)-1]
+}
+
+func TestAuditTrailOnSuccess(t *testing.T) {
+	rt := &fakeRuntime{events: []runtime.Event{
+		{Type: runtime.EventToken, Content: "hi"},
+		{Type: runtime.EventUsage, PromptTokens: 17, CompletionTokens: 8, Model: "m1"},
+		{Type: runtime.EventDone, TaskID: "t"},
+	}}
+	audit := &bufAudit{}
+	d, tasks, hub, task := setupWithAudit(t, rt, audit)
+
+	go func() { _ = d.Execute(task) }()
+	waitFinal(t, tasks, task.ID)
+	waitHubFinished(t, hub, task.ID)
+
+	got := audit.actions()
+	want := []string{observability.ActionTaskStarted, observability.ActionTaskSucceeded}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("audit trail = %v, want %v", got, want)
+	}
+	final := audit.last()
+	if final.Entity != observability.EntityTask || final.EntityID != task.ID {
+		t.Fatalf("event entity mismatch: %+v", final)
+	}
+	if final.Detail["prompt_tokens"] != int64(17) || final.Detail["model"] != "m1" {
+		t.Fatalf("succeeded audit should carry usage summary, got %+v", final.Detail)
+	}
+}
+
+func TestAuditTrailOnFailure(t *testing.T) {
+	rt := &fakeRuntime{events: []runtime.Event{
+		{Type: runtime.EventError, Code: model.ErrToolTimeout, Message: "boom"},
+	}}
+	audit := &bufAudit{}
+	d, tasks, hub, task := setupWithAudit(t, rt, audit)
+
+	go func() { _ = d.Execute(task) }()
+	waitFinal(t, tasks, task.ID)
+	waitHubFinished(t, hub, task.ID)
+
+	got := audit.actions()
+	want := []string{observability.ActionTaskStarted, observability.ActionTaskFailed}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("audit trail = %v, want %v", got, want)
+	}
+	if last := audit.last(); last.Detail["error_code"] != model.ErrToolTimeout {
+		t.Fatalf("failed audit should carry error_code, got %+v", last.Detail)
+	}
+}
+
+func TestAuditTrailOnRetry(t *testing.T) {
+	rt := &fakeRuntime{events: []runtime.Event{
+		{Type: runtime.EventError, Code: model.ErrAgentTimeout, Message: "deadline"},
+	}}
+	audit := &bufAudit{}
+	d, _, _, task := setupWithAudit(t, rt, audit)
+
+	if err := d.Execute(task); err == nil {
+		t.Fatal("should return RetryableError")
+	}
+	if got := audit.actions(); len(got) != 2 || got[1] != observability.ActionTaskRetry {
+		t.Fatalf("audit trail = %v, want [task_started task_retry]", got)
+	}
+	if last := audit.last(); last.Detail["error_code"] != model.ErrAgentTimeout || last.Detail["attempt"] != 1 {
+		t.Fatalf("retry audit should carry attempt+error_code, got %+v", last.Detail)
 	}
 }

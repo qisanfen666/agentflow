@@ -8,6 +8,7 @@
 //	AGENTFLOW_REDIS_ADDR     Redis 地址（默认 localhost:6380）
 //	AGENTFLOW_REDIS_DB       Redis DB（默认 0）
 //	AGENTFLOW_VISIBILITY_SEC 在途租约/可见性超时秒数（默认 300）
+//	AGENTFLOW_AUDIT_LOG_PATH 审计日志路径（空 = 关闭审计）
 package main
 
 import (
@@ -58,6 +59,9 @@ func main() {
 		},
 		Queue: agentflow.QueueConfig{
 			VisibilityTimeoutSec: intEnv("AGENTFLOW_VISIBILITY_SEC", 300),
+		},
+		Observability: agentflow.ObservabilityConfig{
+			AuditLogPath: env("AGENTFLOW_AUDIT_LOG_PATH", ""),
 		},
 		Runtimes: []string{model.RuntimePythonHTTP, model.RuntimeDocker},
 		Sandbox: agentflow.SandboxConfig{

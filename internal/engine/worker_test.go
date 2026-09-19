@@ -57,7 +57,7 @@ func setupEngine(t *testing.T, rt runtime.Runtime, cfg WorkerConfig) (engineDeps
 	agents := storage.NewMemoryAgentStore()
 	tasks := storage.NewMemoryTaskStore()
 	hub := dispatch.NewHub()
-	d := dispatch.New(agents, tasks, hub, rt)
+	d := dispatch.New(agents, tasks, hub, nil, rt)
 	q := NewMemoryQueue()
 	w := NewWorker(q, d, tasks, cfg)
 	stop := w.Start(ctx)

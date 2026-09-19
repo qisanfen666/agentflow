@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/internal/registry"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/storage"
@@ -49,6 +50,8 @@ func (h *handlers) registerTool(c *gin.Context) {
 		badRequest(c, err.Error()) // 命名/schema 校验失败都在 400
 		return
 	}
+	h.audit(c, observability.ActionToolRegistered, observability.EntityTool, tool.ID,
+		map[string]any{"name": tool.Name})
 	c.JSON(http.StatusCreated, tool)
 }
 

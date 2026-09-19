@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
 )
 
@@ -50,6 +51,8 @@ func (h *handlers) createAgent(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
+	h.audit(c, observability.ActionAgentCreated, observability.EntityAgent, created.ID,
+		map[string]any{"runtime_type": created.Runtime.Type})
 	c.JSON(http.StatusCreated, created)
 }
 
@@ -87,6 +90,8 @@ func (h *handlers) updateAgent(c *gin.Context) {
 		respondErr(c, err) // ErrVersionConflict -> 409
 		return
 	}
+	h.audit(c, observability.ActionAgentUpdated, observability.EntityAgent, updated.ID,
+		map[string]any{"from_version": in.BaseVersion, "to_version": updated.Version})
 	c.JSON(http.StatusOK, updated)
 }
 
@@ -95,6 +100,7 @@ func (h *handlers) deleteAgent(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
+	h.audit(c, observability.ActionAgentDeleted, observability.EntityAgent, c.Param("id"), nil)
 	c.JSON(http.StatusNoContent, nil)
 }
 

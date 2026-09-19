@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
 	"github.com/qisanfen666/agentflow/storage"
@@ -123,6 +124,7 @@ type Dispatcher struct {
 	agents   storage.AgentStore
 	tasks    storage.TaskStore
 	hub      *Hub
+	audit    observability.AuditLogger // 执行链路审计（task_started/retry/终态）；可为 nil
 
 	// MaxRetries 可重试错误的次数上限；超过则落终态。
 	// 默认 DefaultMaxRetries，wiring 时由 queue 配置覆盖。
@@ -133,12 +135,13 @@ type Dispatcher struct {
 }
 
 // New 创建分发器，rts 至少要有一个；重复 Type() 以后注册者胜。
-func New(agents storage.AgentStore, tasks storage.TaskStore, hub *Hub, rts ...runtime.Runtime) *Dispatcher {
+func New(agents storage.AgentStore, tasks storage.TaskStore, hub *Hub, audit observability.AuditLogger, rts ...runtime.Runtime) *Dispatcher {
 	d := &Dispatcher{
 		runtimes:   make(map[string]runtime.Runtime),
 		agents:     agents,
 		tasks:      tasks,
 		hub:        hub,
+		audit:      audit,
 		MaxRetries: DefaultMaxRetries,
 		cancels:    make(map[string]context.CancelFunc),
 	}
@@ -171,6 +174,10 @@ func (d *Dispatcher) Execute(task model.Task) error {
 		}
 		return fmt.Errorf("save running task: %w", err)
 	}
+	observability.RecordBestEffort(d.audit, ctx, observability.AuditEvent{
+		Action: observability.ActionTaskStarted, Entity: observability.EntityTask, EntityID: task.ID,
+		Detail: map[string]any{"attempt": task.AttemptCount, "agent_version": task.AgentVersion},
+	})
 
 	spec, err := d.agents.GetVersion(ctx, task.AgentID, task.AgentVersion)
 	if err != nil {
@@ -226,6 +233,10 @@ func (d *Dispatcher) Execute(task model.Task) error {
 						}
 						return fmt.Errorf("save retryable task: %w", err)
 					}
+					observability.RecordBestEffort(d.audit, ctx, observability.AuditEvent{
+						Action: observability.ActionTaskRetry, Entity: observability.EntityTask, EntityID: task.ID,
+						Detail: map[string]any{"attempt": task.AttemptCount, "error_code": ev.Code},
+					})
 					return &RetryableError{Code: ev.Code, Attempt: task.AttemptCount}
 				}
 				// 迁移失败（已被取消）：落入终态路径
@@ -263,8 +274,45 @@ func (d *Dispatcher) finalize(task *model.Task, te *model.TaskError) error {
 		}
 		return fmt.Errorf("save final task: %w", err)
 	}
+	d.auditFinal(*task)
 	d.hub.Finish(task.ID)
 	return nil
+}
+
+// auditFinal 终态审计。succeeded 带 usage 汇总，failed/timeout 带 error_code——
+// 审计视角看：一次执行结束时的"结果摘要"。取消先落的冲突路径不在此列
+// （task_cancelled 由 API 层记录）。
+func (d *Dispatcher) auditFinal(task model.Task) {
+	ev := observability.AuditEvent{Entity: observability.EntityTask, EntityID: task.ID}
+	switch task.Status {
+	case model.TaskSucceeded:
+		ev.Action = observability.ActionTaskSucceeded
+		detail := map[string]any{"attempt": task.AttemptCount}
+		if task.Usage != nil {
+			detail["prompt_tokens"] = task.Usage.PromptTokens
+			detail["completion_tokens"] = task.Usage.CompletionTokens
+			if task.Usage.Model != "" {
+				detail["model"] = task.Usage.Model
+			}
+		}
+		ev.Detail = detail
+	case model.TaskTimeout:
+		ev.Action = observability.ActionTaskTimeout
+		ev.Detail = map[string]any{"attempt": task.AttemptCount, "error_code": errorCode(task)}
+	case model.TaskFailed:
+		ev.Action = observability.ActionTaskFailed
+		ev.Detail = map[string]any{"attempt": task.AttemptCount, "error_code": errorCode(task)}
+	default:
+		return // cancelled 等非本路径终态：审计归属 API 层
+	}
+	observability.RecordBestEffort(d.audit, context.Background(), ev)
+}
+
+func errorCode(task model.Task) string {
+	if task.Error != nil {
+		return task.Error.Code
+	}
+	return ""
 }
 
 // Cancel 取消运行中的任务（由 DELETE /tasks/:id 调用）。尽力传播：取消 ctx、

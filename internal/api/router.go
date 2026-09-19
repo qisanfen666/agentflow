@@ -10,6 +10,7 @@ import (
 
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/internal/registry"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/storage"
@@ -21,9 +22,10 @@ type Dependencies struct {
 	Tasks      storage.TaskStore
 	Dispatcher *dispatch.Dispatcher
 	Hub        *dispatch.Hub
-	Queue      engine.Queue       // M2：提交即入队，由 engine.Worker 消费执行
-	Idem       storage.IdemStore  // 提交幂等占位（memory / redis 双实现）
-	Tools      *registry.Registry // M3：工具注册表（校验 + MCP 导出）
+	Queue      engine.Queue              // M2：提交即入队，由 engine.Worker 消费执行
+	Idem       storage.IdemStore         // 提交幂等占位（memory / redis 双实现）
+	Tools      *registry.Registry        // M3：工具注册表（校验 + MCP 导出）
+	Audit      observability.AuditLogger // M5：API 层审计（创建/更新/删除/提交/取消）；nil = 关闭
 }
 
 // handlers 共享依赖的 handler 集合。各端点方法分属 agent_handler.go / task_handler.go。
@@ -77,4 +79,11 @@ func respondErr(c *gin.Context, err error) {
 // badRequest 统一 400 响应（参数绑定/校验失败）。
 func badRequest(c *gin.Context, msg string) {
 	c.JSON(http.StatusBadRequest, gin.H{"code": codeBadRequest, "message": msg})
+}
+
+// audit 尽力审计 API 层动作（nil 安全，写失败不阻断请求）。
+func (h *handlers) audit(c *gin.Context, action, entity, id string, detail map[string]any) {
+	observability.RecordBestEffort(h.deps.Audit, c.Request.Context(), observability.AuditEvent{
+		Action: action, Entity: entity, EntityID: id, Detail: detail,
+	})
 }

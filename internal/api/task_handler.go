@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
 )
 
@@ -99,6 +100,8 @@ func (h *handlers) submitTask(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
+	h.audit(c, observability.ActionTaskSubmitted, observability.EntityTask, task.ID,
+		map[string]any{"agent_id": task.AgentID, "agent_version": task.AgentVersion})
 	c.JSON(http.StatusAccepted, task)
 }
 
@@ -132,6 +135,7 @@ func (h *handlers) cancelTask(c *gin.Context) {
 		return
 	}
 	h.deps.Dispatcher.Cancel(task.ID)
+	h.audit(c, observability.ActionTaskCancelled, observability.EntityTask, task.ID, nil)
 	c.JSON(http.StatusAccepted, task)
 }
 
