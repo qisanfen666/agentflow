@@ -129,7 +129,7 @@ data: [DONE]
 | **M1 端到端最小切片** ✅ 2026-09-14 | 内存存储 + 直接分发（无队列）+ Agent CRUD + 提交 + SSE 透传 + 幂等/取消 | examples/python-agent 跑通全链路 demo |
 | **M2 持久化与队列** ✅ 2026-09-15 | storage 双实现（Lua 原子版本/幂等 SETNX）、engine Queue 接口 + Worker 循环（Ack/Nack、指数退避重试、可见性回收）、RedisQueue（BLMOVE/降级 BRPopLPush、ZSET 延迟退避、在途租约）、提交即入队 | 集成测试过（共享 6380 容器，按包分 DB）+ 冒烟：杀 server 重启任务不丢 |
 | **M3 执行面** ✅ 2026-09-16 | runtime 公开化：python-http + Docker 沙箱（CLI 方案：一次性容器生命周期，只读/内存/CPU 限制，网络禁用明确不支持）、SSE 内核抽取复用、Tool Registry（jsonschema v6 校验 + ToolStore 双实现 + MCP 导出 2 端点） | 冒烟：双 Runtime 同 server 各跑一任务成功 + 容器零残留 + 工具全流程 409/400/MCP |
-| **M4 库收口 v0.1** | facade `New/Start/Stop/Mount`、graceful shutdown、README、examples 补全 | 打 tag v0.1，公开 API 冻结 |
+| **M4 库收口 v0.1** ✅ 2026-09-19 | facade `New/Start/Stop/Mount`、优雅关停、README、examples 补全（embed 嵌入形态）、终态不可逆下沉存储层（修复取消复活竞态） | 打 tag v0.1，公开 API 冻结 |
 | **M5 可观测性**（旧 Phase 3） | 审计落地（append-only）、OTel 全链路、token 计数（汇总 usage 事件）、Prometheus、Session 启用 | Grafana 看板 |
 | **M6 治理**（旧 Phase 4） | Policy Engine、RBAC、Rate Limiting、Cost Guardrails、审批流 | —— |
 
