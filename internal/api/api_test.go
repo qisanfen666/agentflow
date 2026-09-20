@@ -439,6 +439,117 @@ func TestSubmitCapturesTraceContext(t *testing.T) {
 	}
 }
 
+// ---------- 认证授权（M6） ----------
+
+// TestAPIKeyAuthMatrix 401/403/200 三态：错 key 拒之门外，
+// 越权方法 403，合法角色放行；/health 探活豁免。
+func TestAPIKeyAuthMatrix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	auth := NewAPIKeyAuth([]APIKeyEntry{
+		{Key: "k-admin", Roles: []string{RoleAdmin}},
+		{Key: "k-sub", Roles: []string{RoleSubmitter}},
+		{Key: "k-read", Roles: []string{RoleReader}},
+	})
+	agents := storage.NewMemoryAgentStore()
+	tasks := storage.NewMemoryTaskStore()
+	hub := dispatch.NewHub()
+	d := dispatch.New(agents, tasks, hub, observability.Telemetry{}, &scriptedRuntime{})
+	srv := httptest.NewServer(NewRouter(Dependencies{
+		Agents: agents, Tasks: tasks, Dispatcher: d, Hub: hub,
+		Queue: engine.NewMemoryQueue(),
+		Idem:  storage.NewMemoryIdemStore(),
+		Tools: registry.New(storage.NewMemoryToolStore()),
+		Auth:  auth,
+	}))
+	t.Cleanup(srv.Close)
+
+	agent := mustCreateAgent(t, srv.URL, "k-admin")
+
+	cases := []struct {
+		name string
+		key  string
+		verb func() (*http.Response, string)
+		want int
+	}{
+		{"无 key 提交被拒", "", func() (*http.Response, string) {
+			return postAuth(t, srv.URL, "", "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+		}, http.StatusUnauthorized},
+		{"错 key 被拒", "k-wrong", func() (*http.Response, string) {
+			return postAuth(t, srv.URL, "k-wrong", "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+		}, http.StatusUnauthorized},
+		{"reader 建 Agent 越权 403", "k-read", func() (*http.Response, string) {
+			return postAuth(t, srv.URL, "k-read", "/api/v1/agents", map[string]any{
+				"name": "x", "type": "chat",
+				"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+			})
+		}, http.StatusForbidden},
+		{"reader 读 Agent 放行", "k-read", func() (*http.Response, string) {
+			req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/agents", nil)
+			req.Header.Set("X-API-Key", "k-read")
+			resp, err := http.DefaultClient.Do(req)
+			return resp, readBody(t, err, resp)
+		}, http.StatusOK},
+		{"submitter 提交放行", "k-sub", func() (*http.Response, string) {
+			return postAuth(t, srv.URL, "k-sub", "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+		}, http.StatusAccepted},
+		{"health 探活豁免", "", func() (*http.Response, string) {
+			resp, err := http.Get(srv.URL + "/health")
+			return resp, readBody(t, err, resp)
+		}, http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, body := tc.verb()
+			if resp == nil || resp.StatusCode != tc.want {
+				t.Fatalf("want %d, got %v %s", tc.want, resp, body)
+			}
+		})
+	}
+}
+
+func mustCreateAgent(t *testing.T, baseURL, key string) model.AgentSpec {
+	t.Helper()
+	resp, body := postAuth(t, baseURL, key, "/api/v1/agents", map[string]any{
+		"name": "auth-demo", "type": "chat",
+		"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("setup create agent: %d %s", resp.StatusCode, body)
+	}
+	var spec model.AgentSpec
+	json.Unmarshal([]byte(body), &spec)
+	return spec
+}
+
+func postAuth(t *testing.T, baseURL, key, path string, body any) (*http.Response, string) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, baseURL+path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	if key != "" {
+		req.Header.Set("X-API-Key", key)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	return resp, readBody(t, nil, resp)
+}
+
+func readBody(t *testing.T, err error, resp *http.Response) string {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	return string(raw)
+}
+
 // ---------- 审计 ----------
 
 // collectAudit 测试用审计收集器（与 dispatch 包的 bufAudit 同构，

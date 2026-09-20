@@ -124,6 +124,16 @@ func New(cfg Config) (*Panel, error) {
 	if p.cfg.Observability.MetricsEnabled {
 		tel.Metrics = observability.NewMetrics()
 	}
+
+	// 认证授权：启用时挂内置 API Key 中间件；未启用留空（嵌入宿主可自行注入）
+	var auth gin.HandlerFunc
+	if p.cfg.Auth.Enabled {
+		entries := make([]api.APIKeyEntry, len(p.cfg.Auth.Keys))
+		for i, k := range p.cfg.Auth.Keys {
+			entries[i] = api.APIKeyEntry{Key: k.Key, Roles: k.Roles}
+		}
+		auth = api.NewAPIKeyAuth(entries)
+	}
 	shutdown, err := observability.SetupTracing(observability.TraceConfig{
 		ServiceName:  p.cfg.Observability.ServiceName,
 		OTLPEndpoint: p.cfg.Observability.OTLPEndpoint,
@@ -152,6 +162,7 @@ func New(cfg Config) (*Panel, error) {
 		Tools:      reg,
 		Audit:      tel.Audit,
 		Metrics:    tel.Metrics,
+		Auth:       auth,
 	}
 	p.route = api.NewRouter(p.deps)
 	return p, nil

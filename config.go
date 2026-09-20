@@ -52,10 +52,18 @@ type SandboxConfig struct {
 	NetworkDisabled bool   `yaml:"network_disabled" json:"network_disabled"`   // 禁用网络
 }
 
-// AuthConfig 控制访问认证（当前仅 API Key；RBAC 属于后续治理阶段）。
+// AuthConfig 控制访问认证与授权（M6）。
+// 认证：X-API-Key 头匹配已配置 key；授权：key 绑定角色，方法级权限矩阵。
+// 嵌入形态下宿主可不用内置实现，直接注入自己的鉴权中间件（Dependencies.Auth）。
 type AuthConfig struct {
 	Enabled bool     `yaml:"enabled" json:"enabled"`
-	APIKeys []string `yaml:"api_keys" json:"api_keys"`
+	Keys    []APIKey `yaml:"keys" json:"keys"`
+}
+
+// APIKey 一把 key 及其角色。角色：admin（全权）/ submitter（提交+查任务+读配置）/ reader（只读）。
+type APIKey struct {
+	Key   string   `yaml:"key" json:"key"`
+	Roles []string `yaml:"roles" json:"roles"`
 }
 
 // ObservabilityConfig 控制可观测性。

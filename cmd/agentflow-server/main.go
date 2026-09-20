@@ -12,6 +12,8 @@
 //	AGENTFLOW_METRICS_ENABLED 置 1 启用 /metrics（Prometheus）
 //	AGENTFLOW_SERVICE_NAME    OTel 服务名（默认 agentflow）
 //	AGENTFLOW_OTLP_ENDPOINT   OTLP gRPC 地址（如 localhost:4317；空 = 关闭追踪）
+//	AGENTFLOW_AUTH_ENABLED    置 1 启用认证授权
+//	AGENTFLOW_API_KEYS        key 列表，格式 "key1:admin;key2:submitter,reader"
 package main
 
 import (
@@ -27,6 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	agentflow "github.com/qisanfen666/agentflow"
+	"github.com/qisanfen666/agentflow/internal/api"
 	"github.com/qisanfen666/agentflow/model"
 )
 
@@ -44,6 +47,15 @@ func intEnv(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// buildAuthConfig 从 env 装配认证配置。
+func buildAuthConfig() agentflow.AuthConfig {
+	cfg := agentflow.AuthConfig{Enabled: env("AGENTFLOW_AUTH_ENABLED", "") == "1"}
+	for _, e := range api.ParseAPIKeys(env("AGENTFLOW_API_KEYS", "")) {
+		cfg.Keys = append(cfg.Keys, agentflow.APIKey{Key: e.Key, Roles: e.Roles})
+	}
+	return cfg
 }
 
 func main() {
@@ -69,6 +81,7 @@ func main() {
 			ServiceName:    env("AGENTFLOW_SERVICE_NAME", "agentflow"),
 			OTLPEndpoint:   env("AGENTFLOW_OTLP_ENDPOINT", ""),
 		},
+		Auth:     buildAuthConfig(),
 		Runtimes: []string{model.RuntimePythonHTTP, model.RuntimeDocker},
 		Sandbox: agentflow.SandboxConfig{
 			ReadOnlyRootFS: true,

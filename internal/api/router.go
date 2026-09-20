@@ -31,6 +31,7 @@ type Dependencies struct {
 	Tools      *registry.Registry        // M3：工具注册表（校验 + MCP 导出）
 	Audit      observability.AuditLogger // M5：API 层审计（创建/更新/删除/提交/取消）；nil = 关闭
 	Metrics    *observability.Metrics    // M5：非 nil 时挂 GET /metrics
+	Auth       gin.HandlerFunc           // M6：认证授权中间件；nil = 关闭。可注入宿主自定义实现
 }
 
 // handlers 共享依赖的 handler 集合。各端点方法分属 agent_handler.go / task_handler.go。
@@ -67,13 +68,20 @@ func traceMiddleware() gin.HandlerFunc {
 }
 
 // MountRoutes 把全部端点注册到既有 engine / router group（嵌入模式）。
-// 不挂任何中间件：日志/认证/CORS 等横切关注点由宿主自行决定。
+// 业务中间件（日志/CORS）由宿主自定；两个例外：
+//   - trace：观测链路提取必须在最外层
+//   - deps.Auth 非 nil 时挂认证授权（内置实现或宿主注入）
+//
+// /health 先于 auth 注册以保持豁免（探活不带凭据）；/metrics 受 admin 保护。
 // deps.Metrics 非 nil 时额外挂 GET /metrics（Prometheus 抓取端点）。
 func MountRoutes(r gin.IRouter, deps Dependencies) {
 	r.Use(traceMiddleware())
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	if deps.Auth != nil {
+		r.Use(deps.Auth)
+	}
 	if deps.Metrics != nil {
 		r.GET("/metrics", gin.WrapH(deps.Metrics.Handler()))
 	}
