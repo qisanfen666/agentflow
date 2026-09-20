@@ -286,6 +286,7 @@ components:
       properties:
         agent_id: { type: string }
         agent_version: { type: integer, description: 缺省锁定当前最新版本 }
+        session_id: { type: string, description: 可选归因分组（会话/用户/租户），进审计与 span，不进指标 label }
         payload: { type: object }
         timeout_sec: { type: integer, default: 300 }
 
@@ -295,6 +296,7 @@ components:
         id: { type: string }
         agent_id: { type: string }
         agent_version: { type: integer }
+        session_id: { type: string }
         status: { type: string, enum: [pending, running, succeeded, failed, cancelled, timeout] }
         attempt_count: { type: integer }
         error: { $ref: "#/components/schemas/Error" }

@@ -473,3 +473,67 @@ func TestAuditTrailForAPI(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionIDAttribution 会话归因：提交带 session_id -> 任务回显，
+// 且提交/终态审计事件的 detail 携带 session_id（高基数只进审计，不进指标）。
+func TestSessionIDAttribution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	audit := &collectAudit{}
+	agents := storage.NewMemoryAgentStore()
+	tasks := storage.NewMemoryTaskStore()
+	hub := dispatch.NewHub()
+	rt := &scriptedRuntime{events: []runtime.Event{{Type: runtime.EventDone, TaskID: "t"}}}
+	d := dispatch.New(agents, tasks, hub, observability.Telemetry{Audit: audit}, rt)
+	queue := engine.NewMemoryQueue()
+	worker := engine.NewWorker(queue, d, tasks, engine.WorkerConfig{RetryBackoffBase: 10 * time.Millisecond})
+	stop := worker.Start(context.Background())
+	t.Cleanup(stop)
+	srv := httptest.NewServer(NewRouter(Dependencies{
+		Agents: agents, Tasks: tasks, Dispatcher: d, Hub: hub, Queue: queue,
+		Idem: storage.NewMemoryIdemStore(), Tools: registry.New(storage.NewMemoryToolStore()),
+		Audit: audit,
+	}))
+	t.Cleanup(srv.Close)
+
+	resp, body := postJSON(t, srv, "/api/v1/agents", map[string]any{
+		"name": "sess", "type": "chat",
+		"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create agent: %d %s", resp.StatusCode, body)
+	}
+	var agent model.AgentSpec
+	json.Unmarshal([]byte(body), &agent)
+
+	resp, body = postJSON(t, srv, "/api/v1/tasks", map[string]any{
+		"agent_id": agent.ID, "session_id": "s_001", "payload": map[string]any{},
+	})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("submit: %d %s", resp.StatusCode, body)
+	}
+	var task model.Task
+	json.Unmarshal([]byte(body), &task)
+	if task.SessionID != "s_001" {
+		t.Fatalf("session_id should roundtrip, got %q", task.SessionID)
+	}
+
+	// 等 worker 跑完，审计里 submitted 与 succeeded 都应带 session_id
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(audit.actions()) >= 4 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	audit.mu.Lock()
+	defer audit.mu.Unlock()
+	seen := map[string]bool{}
+	for _, ev := range audit.evs {
+		if ev.EntityID == task.ID && ev.Detail["session_id"] == "s_001" {
+			seen[ev.Action] = true
+		}
+	}
+	if !seen[observability.ActionTaskSubmitted] || !seen[observability.ActionTaskSucceeded] {
+		t.Fatalf("submitted/succeeded audit should carry session_id, seen=%v events=%+v", seen, audit.evs)
+	}
+}

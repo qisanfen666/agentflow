@@ -183,19 +183,24 @@ func (d *Dispatcher) Execute(task model.Task) error {
 	}
 	observability.RecordBestEffort(d.tel.Audit, ctx, observability.AuditEvent{
 		Action: observability.ActionTaskStarted, Entity: observability.EntityTask, EntityID: task.ID,
-		Detail: map[string]any{"attempt": task.AttemptCount, "agent_version": task.AgentVersion},
+		Detail: withSession(task, map[string]any{"attempt": task.AttemptCount, "agent_version": task.AgentVersion}),
 	})
 	startedAt := time.Now()
 
 	// 执行链路 span。API 与 worker 之间隔着队列（链路天然断开），此处是新链路的根；
 	// 出站请求会注入 traceparent，执行面 Agent 继续上报即接续成全链路。
-	ctx, span := dispTracer.Start(ctx, "task.execute",
+	spanOpts := []trace.SpanStartOption{
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
 			attribute.String("task.id", task.ID),
 			attribute.String("agent.id", task.AgentID),
 			attribute.Int("task.attempt", task.AttemptCount),
-		))
+		),
+	}
+	if task.SessionID != "" {
+		spanOpts = append(spanOpts, trace.WithAttributes(attribute.String("session.id", task.SessionID)))
+	}
+	ctx, span := dispTracer.Start(ctx, "task.execute", spanOpts...)
 	defer func() {
 		span.SetAttributes(attribute.String("task.final_status", string(task.Status)))
 		span.End()
@@ -323,17 +328,25 @@ func (d *Dispatcher) recordFinal(task model.Task, startedAt time.Time) {
 				detail["model"] = task.Usage.Model
 			}
 		}
-		ev.Detail = detail
+		ev.Detail = withSession(task, detail)
 	case model.TaskTimeout:
 		ev.Action = observability.ActionTaskTimeout
-		ev.Detail = map[string]any{"attempt": task.AttemptCount, "error_code": errorCode(task)}
+		ev.Detail = withSession(task, map[string]any{"attempt": task.AttemptCount, "error_code": errorCode(task)})
 	case model.TaskFailed:
 		ev.Action = observability.ActionTaskFailed
-		ev.Detail = map[string]any{"attempt": task.AttemptCount, "error_code": errorCode(task)}
+		ev.Detail = withSession(task, map[string]any{"attempt": task.AttemptCount, "error_code": errorCode(task)})
 	default:
 		return // cancelled 等非本路径终态：审计归属 API 层
 	}
 	observability.RecordBestEffort(d.tel.Audit, context.Background(), ev)
+}
+
+// withSession 给审计 detail 补充会话分组字段（可选，空则不加）。
+func withSession(task model.Task, detail map[string]any) map[string]any {
+	if task.SessionID != "" {
+		detail["session_id"] = task.SessionID
+	}
+	return detail
 }
 
 func errorCode(task model.Task) string {

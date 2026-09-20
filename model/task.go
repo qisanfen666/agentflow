@@ -67,6 +67,7 @@ type Task struct {
 	ID           string         `json:"id"`
 	AgentID      string         `json:"agent_id"`
 	AgentVersion int            `json:"agent_version"`
+	SessionID    string         `json:"session_id,omitempty"` // 可选归因分组：同会话任务的聚合维度（成本/审计）。控制面不理解会话语义
 	Status       TaskStatus     `json:"status"`
 	Payload      map[string]any `json:"payload,omitempty"`
 	TimeoutSec   int            `json:"timeout_sec,omitempty"`

@@ -24,10 +24,21 @@ func registerTaskRoutes(r gin.IRouter, h *handlers) {
 // idemTTL 幂等 key 的占位窗口：窗口内同 key 视为重复提交。
 const idemTTL = 10 * time.Minute
 
+// auditDetail 任务审计事件的公共字段。session_id 高基数，只进审计明细
+// （供 ELK 等按会话聚合），不进 Prometheus label。
+func auditDetail(task model.Task) map[string]any {
+	detail := map[string]any{"agent_id": task.AgentID, "agent_version": task.AgentVersion}
+	if task.SessionID != "" {
+		detail["session_id"] = task.SessionID
+	}
+	return detail
+}
+
 // taskInput 提交请求体（openapi TaskInput）。
 type taskInput struct {
 	AgentID      string         `json:"agent_id"`
 	AgentVersion int            `json:"agent_version"` // 0 = 锁定当前最新版本
+	SessionID    string         `json:"session_id"`    // 可选：归因分组（审计/span 携带，不进指标 label——高基数）
 	Payload      map[string]any `json:"payload"`
 	TimeoutSec   int            `json:"timeout_sec"`
 }
@@ -65,6 +76,7 @@ func (h *handlers) submitTask(c *gin.Context) {
 		Status:       model.TaskPending,
 		AgentID:      spec.ID,
 		AgentVersion: spec.Version, // 锁定：后续 Agent 更新不影响本任务
+		SessionID:    in.SessionID, // 可选归因分组，空则无会话
 		Payload:      in.Payload,
 		TimeoutSec:   in.TimeoutSec,
 	})
@@ -101,7 +113,7 @@ func (h *handlers) submitTask(c *gin.Context) {
 		return
 	}
 	h.audit(c, observability.ActionTaskSubmitted, observability.EntityTask, task.ID,
-		map[string]any{"agent_id": task.AgentID, "agent_version": task.AgentVersion})
+		auditDetail(task))
 	c.JSON(http.StatusAccepted, task)
 }
 
