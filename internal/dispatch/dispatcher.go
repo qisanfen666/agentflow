@@ -258,6 +258,9 @@ func (d *Dispatcher) Execute(task model.Task) error {
 				task.Usage.Model = ev.Model
 			}
 			d.tel.Metrics.AddTokens(ev.PromptTokens, ev.CompletionTokens, ev.Model)
+			if b := d.tel.Budget; b != nil { // 接口零值 nil 直接调用会 panic，判空后走
+				b.Record(ev.PromptTokens, ev.CompletionTokens) // 成本护栏按实际消耗扣减
+			}
 		case runtime.EventDone:
 			_ = task.Transition(model.TaskSucceeded) // 已取消时拒绝，忽略
 		case runtime.EventError:

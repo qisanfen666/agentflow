@@ -28,6 +28,7 @@ import (
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
 	"github.com/qisanfen666/agentflow/internal/observability"
+	"github.com/qisanfen666/agentflow/internal/policy"
 	"github.com/qisanfen666/agentflow/internal/registry"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
@@ -134,6 +135,19 @@ func New(cfg Config) (*Panel, error) {
 		}
 		auth = api.NewAPIKeyAuth(entries)
 	}
+
+	// 治理规则链（M6）：限流在前预算在后（便宜的检查先跑）。
+	// BudgetTracker 同时作为回报端注入 Telemetry——提交守门与消耗扣减共用同一计数。
+	var chain policy.Chain
+	var budget *policy.BudgetTracker
+	if n := p.cfg.Governance.RateLimitPerMin; n > 0 {
+		chain = append(chain, policy.NewRateLimitRule(n))
+	}
+	if b := p.cfg.Governance.DailyTokenBudget; b > 0 {
+		budget = policy.NewBudgetTracker(b)
+		chain = append(chain, budget)
+	}
+	tel.Budget = budget
 	shutdown, err := observability.SetupTracing(observability.TraceConfig{
 		ServiceName:  p.cfg.Observability.ServiceName,
 		OTLPEndpoint: p.cfg.Observability.OTLPEndpoint,
@@ -163,6 +177,7 @@ func New(cfg Config) (*Panel, error) {
 		Audit:      tel.Audit,
 		Metrics:    tel.Metrics,
 		Auth:       auth,
+		Policy:     chain,
 	}
 	p.route = api.NewRouter(p.deps)
 	return p, nil

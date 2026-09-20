@@ -14,6 +14,8 @@
 //	AGENTFLOW_OTLP_ENDPOINT   OTLP gRPC 地址（如 localhost:4317；空 = 关闭追踪）
 //	AGENTFLOW_AUTH_ENABLED    置 1 启用认证授权
 //	AGENTFLOW_API_KEYS        key 列表，格式 "key1:admin;key2:submitter,reader"
+//	AGENTFLOW_RATE_LIMIT_PER_MIN 全局提交速率上限/分钟（0 = 不限）
+//	AGENTFLOW_TOKEN_BUDGET    自然日 token 预算（0 = 不限）
 package main
 
 import (
@@ -58,6 +60,16 @@ func buildAuthConfig() agentflow.AuthConfig {
 	return cfg
 }
 
+// int64Env 环境变量取 int64（预算等大数配置用）。
+func int64Env(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
 func main() {
 	addr := flag.String("addr", env("AGENTFLOW_ADDR", ":8080"), "listen address")
 	flag.Parse()
@@ -81,7 +93,11 @@ func main() {
 			ServiceName:    env("AGENTFLOW_SERVICE_NAME", "agentflow"),
 			OTLPEndpoint:   env("AGENTFLOW_OTLP_ENDPOINT", ""),
 		},
-		Auth:     buildAuthConfig(),
+		Auth: buildAuthConfig(),
+		Governance: agentflow.GovernanceConfig{
+			RateLimitPerMin:  intEnv("AGENTFLOW_RATE_LIMIT_PER_MIN", 0),
+			DailyTokenBudget: int64Env("AGENTFLOW_TOKEN_BUDGET", 0),
+		},
 		Runtimes: []string{model.RuntimePythonHTTP, model.RuntimeDocker},
 		Sandbox: agentflow.SandboxConfig{
 			ReadOnlyRootFS: true,

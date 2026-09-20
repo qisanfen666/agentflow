@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -69,6 +71,16 @@ func (h *handlers) submitTask(c *gin.Context) {
 	}
 	if in.AgentID == "" {
 		badRequest(c, "agent_id is required")
+		return
+	}
+	// 治理守门（M6）：限流/预算等规则链在入队前评估，拒绝统一 429 + 治理码
+	if v := h.deps.Policy.Evaluate(c.Request.Context(), model.Task{
+		AgentID: in.AgentID, SessionID: in.SessionID, Payload: in.Payload,
+	}); !v.Allowed {
+		if v.RetryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(int(math.Ceil(v.RetryAfter.Seconds()))))
+		}
+		c.JSON(http.StatusTooManyRequests, gin.H{"code": v.Code, "message": v.Message})
 		return
 	}
 

@@ -46,11 +46,18 @@ type AuditLogger interface {
 	Record(ctx context.Context, ev AuditEvent) error
 }
 
-// Telemetry 聚合观测组件，随组件构造注入。字段均可为零值（nil = 未启用），
+// Telemetry 聚合观测与治理回报组件，随组件构造注入。字段均可为零值（nil = 未启用），
 // 埋点路径全部 nil-safe。
 type Telemetry struct {
 	Audit   AuditLogger
 	Metrics *Metrics
+	Budget  BudgetRecorder // 成本护栏回报接口（实现：policy.BudgetTracker）
+}
+
+// BudgetRecorder 成本护栏的回报面：dispatcher 只依赖这个最小接口，
+// 具体计数策略（内存日预算/分布式）由装配方决定。
+type BudgetRecorder interface {
+	Record(prompt, completion int64)
 }
 
 // RecordBestEffort 尽力审计：写失败只记日志，不阻断业务主流程——

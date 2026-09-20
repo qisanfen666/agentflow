@@ -15,6 +15,7 @@ import (
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
 	"github.com/qisanfen666/agentflow/internal/observability"
+	"github.com/qisanfen666/agentflow/internal/policy"
 	"github.com/qisanfen666/agentflow/internal/registry"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/storage"
@@ -32,6 +33,7 @@ type Dependencies struct {
 	Audit      observability.AuditLogger // M5：API 层审计（创建/更新/删除/提交/取消）；nil = 关闭
 	Metrics    *observability.Metrics    // M5：非 nil 时挂 GET /metrics
 	Auth       gin.HandlerFunc           // M6：认证授权中间件；nil = 关闭。可注入宿主自定义实现
+	Policy     policy.Chain              // M6：提交前治理规则链；空链 = 不治理
 }
 
 // handlers 共享依赖的 handler 集合。各端点方法分属 agent_handler.go / task_handler.go。

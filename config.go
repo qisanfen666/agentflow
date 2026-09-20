@@ -13,7 +13,14 @@ type Config struct {
 	Runtimes      []string            `yaml:"runtimes" json:"runtimes"` // 启用的执行环境，默认 ["python-http"]；docker 需显式加并配 Sandbox
 	Sandbox       SandboxConfig       `yaml:"sandbox" json:"sandbox"`
 	Auth          AuthConfig          `yaml:"auth" json:"auth"`
+	Governance    GovernanceConfig    `yaml:"governance" json:"governance"`
 	Observability ObservabilityConfig `yaml:"observability" json:"observability"`
+}
+
+// GovernanceConfig 控制提交前治理（M6）：限流与成本护栏。零值 = 全部关闭。
+type GovernanceConfig struct {
+	RateLimitPerMin  int   `yaml:"rate_limit_per_min" json:"rate_limit_per_min"` // 全局提交速率上限/分钟；0 = 不限
+	DailyTokenBudget int64 `yaml:"daily_token_budget" json:"daily_token_budget"` // 自然日 token 预算（按实际 usage 扣减）；0 = 不限
 }
 
 // ServerConfig 控制 API 层。

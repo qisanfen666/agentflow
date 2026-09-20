@@ -22,6 +22,7 @@ import (
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
 	"github.com/qisanfen666/agentflow/internal/observability"
+	"github.com/qisanfen666/agentflow/internal/policy"
 	"github.com/qisanfen666/agentflow/internal/registry"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
@@ -548,6 +549,53 @@ func readBody(t *testing.T, err error, resp *http.Response) string {
 	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	return string(raw)
+}
+
+// ---------- 治理（M6） ----------
+
+// TestGovernanceRateLimited 限流守门：burst 打满后第 3 次提交 429 + Retry-After。
+func TestGovernanceRateLimited(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	agents := storage.NewMemoryAgentStore()
+	tasks := storage.NewMemoryTaskStore()
+	hub := dispatch.NewHub()
+	d := dispatch.New(agents, tasks, hub, observability.Telemetry{}, &scriptedRuntime{})
+	srv := httptest.NewServer(NewRouter(Dependencies{
+		Agents: agents, Tasks: tasks, Dispatcher: d, Hub: hub,
+		Queue:  engine.NewMemoryQueue(),
+		Idem:   storage.NewMemoryIdemStore(),
+		Tools:  registry.New(storage.NewMemoryToolStore()),
+		Policy: policy.Chain{policy.NewRateLimitRule(2)},
+	}))
+	t.Cleanup(srv.Close)
+
+	resp, body := postJSON(t, srv, "/api/v1/agents", map[string]any{
+		"name": "gov", "type": "chat",
+		"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create agent: %d %s", resp.StatusCode, body)
+	}
+	var agent model.AgentSpec
+	json.Unmarshal([]byte(body), &agent)
+
+	submit := func() *http.Response {
+		resp, _ := postJSON(t, srv, "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+		return resp
+	}
+	if r := submit(); r.StatusCode != http.StatusAccepted {
+		t.Fatalf("1st submit want 202, got %d", r.StatusCode)
+	}
+	if r := submit(); r.StatusCode != http.StatusAccepted {
+		t.Fatalf("2nd submit want 202, got %d", r.StatusCode)
+	}
+	third := submit()
+	if third.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("3rd submit want 429, got %d", third.StatusCode)
+	}
+	if third.Header.Get("Retry-After") == "" {
+		t.Fatal("429 should carry Retry-After header")
+	}
 }
 
 // ---------- 审计 ----------
