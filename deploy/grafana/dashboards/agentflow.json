@@ -1,0 +1,76 @@
+{
+  "title": "agentflow 控制面",
+  "uid": "agentflow-main",
+  "schemaVersion": 41,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "任务速率（按终态）",
+      "description": "rate(agentflow_tasks_total)：各终态的完成速率，失败率异常是第一告警信号",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(agentflow_tasks_total[1m]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 12 } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "重试速率",
+      "description": "agentflow_task_retries_total：可重试错误（AGENT_UNREACHABLE/TIMEOUT）的退避重投",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(agentflow_task_retries_total[1m])", "legendFormat": "retries" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "title": "Token 消耗速率（按方向 × 模型）",
+      "description": "usage 事件归集；成本趋势与按模型分布",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (direction, model) (rate(agentflow_tokens_total[1m]))",
+          "legendFormat": "{{direction}}/{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 12, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "执行耗时分位（单次尝试）",
+      "description": "P50/P95：task_started 到终态的墙钟分布，重试各段独立观测",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(agentflow_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(agentflow_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    }
+  ]
+}

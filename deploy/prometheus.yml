@@ -1,0 +1,7 @@
+# Prometheus 抓取配置：目标是宿主机上运行的 agentflow-server（/metrics）。
+# host.docker.internal 在 Docker Desktop 上指向宿主；extra_hosts 兜底 Linux。
+scrape_configs:
+  - job_name: agentflow
+    scrape_interval: 2s
+    static_configs:
+      - targets: ["host.docker.internal:18099"]

@@ -1,0 +1,29 @@
+# 一键观测栈：Prometheus（抓取）+ Grafana（看板，datasource/看板已预置）。
+# server 本体不进 compose——库形态的定位是宿主进程，Prometheus 跨容器抓宿主端口。
+# 用法: docker compose -f deploy/docker-compose.yml up -d
+#   Grafana  http://localhost:3300 (admin/admin)
+#   Prometheus http://localhost:9090
+services:
+  prometheus:
+    image: prom/prometheus:v3.7.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Linux 兼容（Desktop 自带该主机名）
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    ports:
+      - "3300:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true" # 只读匿名访问，冒烟脚本与快速预览用
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

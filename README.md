@@ -110,6 +110,26 @@ pending→running→终态 → runtime 调执行面 → token 流经 Hub 实时�
 - **版本锁定**：任务固化 (agent_id, version)，Agent 更新不影响在途任务；
   更新走 base_version 乐观锁，冲突 409。
 
+## 可观测性（M5）
+
+三种信号，各管一件事，按配置独立开关（未启用零开销）：
+
+| 信号 | 开启方式 | 载体与用途 |
+|---|---|---|
+| **审计** | `Observability.AuditLogPath` | append-only JSONL：11 类动作全链路埋点（提交/执行/重试/终态 + Agent/Tool CRUD）。终态带 usage 汇总与 error_code；`session_id` 归因明细在此，供 ELK 等聚合 |
+| **指标** | `Observability.MetricsEnabled` | `GET /metrics`（私有 registry，不污染宿主全局）：tasks_total{status}、retries_total、tokens_total{direction,model}、task_duration 直方图。高基数（session/task id）不进 label，只进审计明细 |
+| **追踪** | `Observability.OTLPEndpoint` | OTLP gRPC 导出（Jaeger/Tempo 直接收）。API 根 span → task.execute → agent.http 三层；出站注入 W3C traceparent，执行面 Agent 可续链。已知缺口：队列两侧暂为两条 trace（Link 补接待做） |
+
+观测栈一键起（Prometheus 抓取 + Grafana 四面板看板已预置）：
+
+```powershell
+docker compose -f deploy/docker-compose.yml up -d
+# Grafana http://localhost:3300 (admin/admin) · Prometheus http://localhost:9090
+```
+
+告警立场：控制面只产生信号（指标/审计），通知渠道与告警规则归消费侧
+（Alertmanager/Grafana Rules），不内建 webhook。
+
 ## 测试与冒烟
 
 ```powershell
@@ -118,6 +138,7 @@ go test ./...                 # 单元 + 合同 + Redis 集成（不可达自动
 ./scripts/smoke-m2.ps1        # 强杀进程 → Redis 数据仍在 → 重启续跑（需 docker redis）
 ./scripts/smoke-m3.ps1        # 双 Runtime 路由 + 容器零残留 + MCP（需 docker）
 ./scripts/smoke-m4.ps1        # 库形态嵌入：宿主路由与挂载控制面共存（需 python3）
+./scripts/smoke-m5.ps1        # 观测栈闭环：指标进 Prometheus + 看板进 Grafana（需 docker）
 ```
 
 ## 配置参考（Config）
@@ -133,6 +154,10 @@ go test ./...                 # 单元 + 合同 + Redis 集成（不可达自动
 | Queue.VisibilityTimeoutSec | 300 | 在途租约/可见性超时 |
 | Runtimes | [python-http] | 声明启用的 Runtime；未知/重复报错 |
 | Sandbox | — | docker Runtime 的资源限制（只读根文件系统/内存/CPU） |
+| Observability.AuditLogPath | 空（关） | 审计 JSONL 路径 |
+| Observability.MetricsEnabled | false | 挂 GET /metrics |
+| Observability.OTLPEndpoint | 空（关） | OTLP gRPC 地址（如 localhost:4317） |
+| Observability.ServiceName | agentflow | OTel service.name |
 
 ## 目录结构
 

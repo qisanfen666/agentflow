@@ -1,0 +1,10 @@
+# 看板预置：从 /var/lib/grafana/dashboards 目录加载 JSON。
+apiVersion: 1
+providers:
+  - name: agentflow
+    folder: agentflow
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards
