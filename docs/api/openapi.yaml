@@ -297,6 +297,7 @@ components:
         agent_id: { type: string }
         agent_version: { type: integer }
         session_id: { type: string }
+        trace_context: { type: string, description: 提交侧 traceparent（tracing 启用时），跨队列因果载体 }
         status: { type: string, enum: [pending, running, succeeded, failed, cancelled, timeout] }
         attempt_count: { type: integer }
         error: { $ref: "#/components/schemas/Error" }

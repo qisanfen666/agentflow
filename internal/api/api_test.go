@@ -14,6 +14,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/qisanfen666/agentflow/internal/dispatch"
 	"github.com/qisanfen666/agentflow/internal/engine"
@@ -382,6 +386,57 @@ func get(srv *httptest.Server, path string) (*http.Response, string) {
 	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	return resp, string(raw)
+}
+
+// TestSubmitCapturesTraceContext 提交侧捕获：tracing 启用时，
+// 提交请求的 span 上下文以 traceparent 字符串存进任务记录。
+func TestSubmitCapturesTraceContext(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	prevTP := otel.GetTracerProvider()
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevTP)
+		otel.SetTextMapPropagator(prevProp)
+	})
+
+	srv := setupAPI(t, &scriptedRuntime{})
+	resp, body := postJSON(t, srv, "/api/v1/agents", map[string]any{
+		"name": "tc", "type": "chat",
+		"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create agent: %d %s", resp.StatusCode, body)
+	}
+	var agent model.AgentSpec
+	json.Unmarshal([]byte(body), &agent)
+
+	resp, body = postJSON(t, srv, "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("submit: %d %s", resp.StatusCode, body)
+	}
+	var task model.Task
+	json.Unmarshal([]byte(body), &task)
+
+	if task.TraceContext == "" {
+		t.Fatal("submit should capture traceparent when tracing is enabled")
+	}
+	parts := strings.Split(task.TraceContext, "-")
+	if len(parts) != 4 || len(parts[1]) != 32 || len(parts[2]) != 16 {
+		t.Fatalf("malformed trace_context: %q", task.TraceContext)
+	}
+	// 捕获的是 API 根 span：spanID 应能在 recorder 的 api span 里找到
+	found := false
+	for _, span := range rec.Ended() {
+		if span.SpanContext().SpanID().String() == parts[2] {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("captured span id %s not found in api spans", parts[2])
+	}
 }
 
 // ---------- 审计 ----------

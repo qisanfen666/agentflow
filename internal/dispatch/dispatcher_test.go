@@ -7,6 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
 	"github.com/qisanfen666/agentflow/runtime"
@@ -349,4 +354,53 @@ func TestAuditTrailOnRetry(t *testing.T) {
 	if last := audit.last(); last.Detail["error_code"] != model.ErrAgentTimeout || last.Detail["attempt"] != 1 {
 		t.Fatalf("retry audit should carry attempt+error_code, got %+v", last.Detail)
 	}
+}
+
+// TestTraceLinkOnExecute 跨队列因果：任务携带提交侧 traceparent，
+// task.execute span 以 Link 指回该 SpanContext（traceID 一致）。
+func TestTraceLinkOnExecute(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	prevTP := otel.GetTracerProvider()
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevTP)
+		otel.SetTextMapPropagator(prevProp)
+	})
+
+	const (
+		traceID = "992f7b14ac8122581e4c672c6423c5c5"
+		spanID  = "b9813c58a01f1234"
+	)
+	taskCtx := "00-" + traceID + "-" + spanID + "-01"
+
+	rt := &fakeRuntime{events: []runtime.Event{{Type: runtime.EventDone, TaskID: "t"}}}
+	d, tasks, hub, task := setupWithAudit(t, rt, nil)
+	task.TraceContext = taskCtx
+	if err := d.Execute(task); err != nil {
+		t.Fatal(err)
+	}
+	waitFinal(t, tasks, task.ID)
+	waitHubFinished(t, hub, task.ID)
+
+	for _, span := range rec.Ended() {
+		if span.Name() != "task.execute" {
+			continue
+		}
+		links := span.Links()
+		if len(links) == 0 {
+			t.Fatal("task.execute should carry a link to the submit-side span")
+		}
+		if got := links[0].SpanContext.TraceID().String(); got != traceID {
+			t.Fatalf("link trace id = %s, want %s", got, traceID)
+		}
+		// Link 不是父子：task.execute 自身是独立 trace 的根
+		if span.Parent().IsValid() {
+			t.Fatal("task.execute must stay a root span (Link, not CHILD_OF)")
+		}
+		return
+	}
+	t.Fatal("task.execute span not recorded")
 }

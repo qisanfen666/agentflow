@@ -67,7 +67,8 @@ type Task struct {
 	ID           string         `json:"id"`
 	AgentID      string         `json:"agent_id"`
 	AgentVersion int            `json:"agent_version"`
-	SessionID    string         `json:"session_id,omitempty"` // 可选归因分组：同会话任务的聚合维度（成本/审计）。控制面不理解会话语义
+	SessionID    string         `json:"session_id,omitempty"`    // 可选归因分组：同会话任务的聚合维度（成本/审计）。控制面不理解会话语义
+	TraceContext string         `json:"trace_context,omitempty"` // 提交侧 span 的 traceparent：跨队列的因果载体（worker 侧以 Link 挂回）
 	Status       TaskStatus     `json:"status"`
 	Payload      map[string]any `json:"payload,omitempty"`
 	TimeoutSec   int            `json:"timeout_sec,omitempty"`

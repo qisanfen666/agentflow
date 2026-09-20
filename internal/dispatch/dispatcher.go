@@ -13,6 +13,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/qisanfen666/agentflow/internal/observability"
@@ -199,6 +200,19 @@ func (d *Dispatcher) Execute(task model.Task) error {
 	}
 	if task.SessionID != "" {
 		spanOpts = append(spanOpts, trace.WithAttributes(attribute.String("session.id", task.SessionID)))
+	}
+	// 跨队列因果（Link 而非 CHILD_OF）：提交侧 span 上下文随任务记录持久化，
+	// 此处以 Link 挂回。不直接续链的原因：异步消费可能滞后数小时且重试多段，
+	// 续链会让单条 trace 时间跨度失控；Link 保留因果又各自保持短 trace。
+	if task.TraceContext != "" {
+		remote := otel.GetTextMapPropagator().Extract(
+			context.Background(), propagation.MapCarrier{"traceparent": task.TraceContext})
+		if sc := trace.SpanContextFromContext(remote); sc.IsValid() {
+			spanOpts = append(spanOpts, trace.WithLinks(trace.Link{
+				SpanContext: sc,
+				Attributes:  []attribute.KeyValue{attribute.String("link.kind", "submitted_via_queue")},
+			}))
+		}
 	}
 	ctx, span := dispTracer.Start(ctx, "task.execute", spanOpts...)
 	defer func() {

@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/qisanfen666/agentflow/internal/observability"
 	"github.com/qisanfen666/agentflow/model"
@@ -32,6 +36,19 @@ func auditDetail(task model.Task) map[string]any {
 		detail["session_id"] = task.SessionID
 	}
 	return detail
+}
+
+// captureTraceparent 捕获当前请求 span 的 traceparent 存进任务记录。
+// 这是跨队列的因果载体：队列（Redis/内存）不是 HTTP，标准传播器穿不过，
+// 把上下文变成数据随任务走，worker 侧以 span Link 挂回。
+// tracing 未启用时 SpanContext 无效，返回空串（零开销关闭）。
+func captureTraceparent(ctx context.Context) string {
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		return ""
+	}
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	return carrier.Get("traceparent")
 }
 
 // taskInput 提交请求体（openapi TaskInput）。
@@ -77,6 +94,7 @@ func (h *handlers) submitTask(c *gin.Context) {
 		AgentID:      spec.ID,
 		AgentVersion: spec.Version, // 锁定：后续 Agent 更新不影响本任务
 		SessionID:    in.SessionID, // 可选归因分组，空则无会话
+		TraceContext: captureTraceparent(c.Request.Context()),
 		Payload:      in.Payload,
 		TimeoutSec:   in.TimeoutSec,
 	})
