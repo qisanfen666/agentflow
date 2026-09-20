@@ -1,11 +1,9 @@
-// 链路追踪装配。链路模型（诚实边界）：
+// 链路追踪装配。链路模型：
 //
-//		客户端 ──► api 根 span ──► [队列解耦，链路天然断开] ──► Execute span ──► agent http span
-//		                                                                  └─ traceparent 注入出站请求，
-//	                                                                   执行面 Agent 继续上报即全链路
-//
-// API→worker 跨队列接续需要把 trace context 写进任务记录（公开 API 扩展），
-// v0.1 冻结期不做，作为已知缺口记录于此。
+//		客户端 ──► api 根 span ──► [队列：traceparent 随任务记录持久化] ──► Execute span
+//		                                                                  │（Link 挂回提交侧，因果不续链）
+//		                                                                  └─► traceparent 注入出站请求，
+//	                                                                     执行面 Agent 继续上报即全链路
 package observability
 
 import (

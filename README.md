@@ -118,7 +118,7 @@ pending→running→终态 → runtime 调执行面 → token 流经 Hub 实时�
 |---|---|---|
 | **审计** | `Observability.AuditLogPath` | append-only JSONL：11 类动作全链路埋点（提交/执行/重试/终态 + Agent/Tool CRUD）。终态带 usage 汇总与 error_code；`session_id` 归因明细在此，供 ELK 等聚合 |
 | **指标** | `Observability.MetricsEnabled` | `GET /metrics`（私有 registry，不污染宿主全局）：tasks_total{status}、retries_total、tokens_total{direction,model}、task_duration 直方图。高基数（session/task id）不进 label，只进审计明细 |
-| **追踪** | `Observability.OTLPEndpoint` | OTLP gRPC 导出（Jaeger/Tempo 直接收）。API 根 span → task.execute → agent.http 三层；出站注入 W3C traceparent，执行面 Agent 可续链。已知缺口：队列两侧暂为两条 trace（Link 补接待做） |
+| **追踪** | `Observability.OTLPEndpoint` | OTLP gRPC 导出（Jaeger/Tempo 直接收）。API 根 span → task.execute → agent.http 三层；出站注入 W3C traceparent，执行面 Agent 可续链。跨队列因果：traceparent 随任务记录持久化，worker 侧以 span Link 挂回（Jaeger 中显示为 FollowsFrom 引用） |
 
 观测栈一键起（Prometheus 抓取 + Grafana 四面板看板已预置）：
 
