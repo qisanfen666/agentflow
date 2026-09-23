@@ -26,7 +26,7 @@ type agentInput struct {
 	Type            string            `json:"type"`
 	Runtime         model.RuntimeSpec `json:"runtime"`
 	Config          map[string]any    `json:"config"`
-	RequireApproval bool              `json:"require_approval"` // M6：管理员声明高危
+	RequireApproval bool              `json:"require_approval"` // 管理员声明高危
 }
 
 // agentUpdateInput 更新请求体（AgentSpecUpdate）：嵌入输入 + 乐观锁基准版本。

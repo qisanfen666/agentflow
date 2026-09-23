@@ -136,7 +136,7 @@ func New(cfg Config) (*Panel, error) {
 		auth = api.NewAPIKeyAuth(entries)
 	}
 
-	// 治理规则链（M6）：限流在前预算在后（便宜的检查先跑）。
+	// 治理规则链：限流在前预算在后（便宜的检查先跑）。
 	// BudgetTracker 同时作为回报端注入 Telemetry——提交守门与消耗扣减共用同一计数。
 	var chain policy.Chain
 	var budget *policy.BudgetTracker

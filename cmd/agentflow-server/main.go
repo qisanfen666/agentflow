@@ -1,4 +1,4 @@
-// agentflow-server 是开箱即用的演示二进制：facade 的最薄用法示范。
+// agentflow-server 是开箱即用的独立部署二进制：facade 的最薄装配示例。
 // 全部装配逻辑在根包 Panel（agentflow.New），本文件只做配置映射与信号处理。
 //
 // 环境变量：
@@ -74,7 +74,7 @@ func main() {
 	addr := flag.String("addr", env("AGENTFLOW_ADDR", ":8080"), "listen address")
 	flag.Parse()
 
-	// 演示配置：双 Runtime（直连 + 沙箱），沙箱用固定资源限制
+	// 双 Runtime（直连 + 沙箱），沙箱用固定资源限制
 	panel, err := agentflow.New(agentflow.Config{
 		Server: agentflow.ServerConfig{Addr: *addr, Mode: gin.ReleaseMode},
 		Storage: agentflow.StorageConfig{

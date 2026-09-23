@@ -10,7 +10,7 @@ type TaskStatus string
 
 const (
 	TaskPending         TaskStatus = "pending"
-	TaskPendingApproval TaskStatus = "pending_approval" // 高危 Agent 的任务提交后先待审（M6），未入队
+	TaskPendingApproval TaskStatus = "pending_approval" // 高危 Agent 的任务提交后先待审，未入队
 	TaskRunning         TaskStatus = "running"
 	TaskSucceeded       TaskStatus = "succeeded"
 	TaskFailed          TaskStatus = "failed"

@@ -1,4 +1,4 @@
-// 内置认证与授权（M6）。治理边界说明：
+// 内置认证与授权。治理边界说明：
 // 认证回答"你是谁"（API Key），授权回答"你能做什么"（角色 × 方法权限矩阵）。
 // 完整身份体系（用户/租户/审计归属）不属库职责——嵌入形态的宿主有自己的体系，
 // 可通过 Dependencies.Auth 注入自定义中间件替换本实现。
@@ -50,7 +50,7 @@ var permissionMatrix = map[string]map[string][]string{
 		http.MethodDelete: {RoleAdmin, RoleSubmitter},
 	},
 	"/api/v1/tasks/:id/approve": {
-		http.MethodPost: {RoleAdmin}, // 审批权归管理员（M6）
+		http.MethodPost: {RoleAdmin}, // 审批权归管理员
 	},
 	"/api/v1/tasks/:id/reject": {
 		http.MethodPost: {RoleAdmin},

@@ -1,4 +1,4 @@
-// Package policy 实现提交前治理（M6）：限流与成本护栏收敛为统一的规则链。
+// Package policy 实现提交前治理：限流与成本护栏收敛为统一的规则链。
 // 架构同构 K8s admission：新增护栏 = 实现 Rule 加入 Chain，而不是在 handler 里散落 if。
 // 拒绝语义都发生在提交时刻（入队前）——队列内任务不受影响。
 package policy

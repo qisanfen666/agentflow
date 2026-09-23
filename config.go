@@ -17,7 +17,7 @@ type Config struct {
 	Observability ObservabilityConfig `yaml:"observability" json:"observability"`
 }
 
-// GovernanceConfig 控制提交前治理（M6）：限流与成本护栏。零值 = 全部关闭。
+// GovernanceConfig 控制提交前治理：限流与成本护栏。零值 = 全部关闭。
 type GovernanceConfig struct {
 	RateLimitPerMin  int   `yaml:"rate_limit_per_min" json:"rate_limit_per_min"` // 全局提交速率上限/分钟；0 = 不限
 	DailyTokenBudget int64 `yaml:"daily_token_budget" json:"daily_token_budget"` // 自然日 token 预算（按实际 usage 扣减）；0 = 不限
@@ -59,7 +59,7 @@ type SandboxConfig struct {
 	NetworkDisabled bool   `yaml:"network_disabled" json:"network_disabled"`   // 禁用网络
 }
 
-// AuthConfig 控制访问认证与授权（M6）。
+// AuthConfig 控制访问认证与授权。
 // 认证：X-API-Key 头匹配已配置 key；授权：key 绑定角色，方法级权限矩阵。
 // 嵌入形态下宿主可不用内置实现，直接注入自己的鉴权中间件（Dependencies.Auth）。
 type AuthConfig struct {

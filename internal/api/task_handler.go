@@ -75,7 +75,7 @@ func (h *handlers) submitTask(c *gin.Context) {
 		badRequest(c, "agent_id is required")
 		return
 	}
-	// 治理守门（M6）：限流/预算等规则链在入队前评估，拒绝统一 429 + 治理码
+	// 治理守门：限流/预算等规则链在入队前评估，拒绝统一 429 + 治理码
 	if v := h.deps.Policy.Evaluate(c.Request.Context(), model.Task{
 		AgentID: in.AgentID, SessionID: in.SessionID, Payload: in.Payload,
 	}); !v.Allowed {
@@ -142,7 +142,7 @@ func (h *handlers) submitTask(c *gin.Context) {
 		}
 	}
 
-	// M2：提交即入队；执行由 engine.Worker 异步消费（队列化代价：
+	// 提交即入队；执行由 engine.Worker 异步消费（队列化代价：
 	// 提交后短暂 pending，毫秒级）。审批流例外：待审任务留在存储里，
 	// approve 放行后才入队（队列闸门语义）。
 	if task.Status == model.TaskPending {

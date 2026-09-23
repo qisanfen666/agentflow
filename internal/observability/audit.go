@@ -1,4 +1,5 @@
-// Package observability 提供审计日志原语（M5 起：metrics / tracing 将陆续入驻）。
+// Package observability 提供可观测性与治理回报原语：审计日志（audit.go）、
+// Prometheus 指标（metrics.go）、OTel 链路追踪（trace.go）。
 // 零内部依赖，处于依赖链最底层，可被 api / dispatch / facade 任意引用。
 package observability
 

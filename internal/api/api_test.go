@@ -440,7 +440,7 @@ func TestSubmitCapturesTraceContext(t *testing.T) {
 	}
 }
 
-// ---------- 认证授权（M6） ----------
+// ---------- 认证授权 ----------
 
 // TestAPIKeyAuthMatrix 401/403/200 三态：错 key 拒之门外，
 // 越权方法 403，合法角色放行；/health 探活豁免。
@@ -551,7 +551,7 @@ func readBody(t *testing.T, err error, resp *http.Response) string {
 	return string(raw)
 }
 
-// ---------- 治理（M6） ----------
+// ---------- 治理 ----------
 
 // TestGovernanceRateLimited 限流守门：burst 打满后第 3 次提交 429 + Retry-After。
 func TestGovernanceRateLimited(t *testing.T) {
@@ -598,7 +598,7 @@ func TestGovernanceRateLimited(t *testing.T) {
 	}
 }
 
-// ---------- 审批流（M6） ----------
+// ---------- 审批流 ----------
 
 // TestApprovalFlow 高危 Agent 全链路：提交即待审（不入队不执行）→ approve 放行
 // → 入队执行至终态；重复审批 409。
