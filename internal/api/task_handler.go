@@ -25,6 +25,8 @@ func registerTaskRoutes(r gin.IRouter, h *handlers) {
 	g.GET("/:id", h.getTask)
 	g.DELETE("/:id", h.cancelTask)
 	g.GET("/:id/stream", h.streamTask)
+	g.POST("/:id/approve", h.approveTask) // M6 审批流（admin）
+	g.POST("/:id/reject", h.rejectTask)
 }
 
 // idemTTL 幂等 key 的占位窗口：窗口内同 key 视为重复提交。
@@ -101,8 +103,12 @@ func (h *handlers) submitTask(c *gin.Context) {
 		return
 	}
 
+	status := model.TaskPending
+	if spec.RequireApproval {
+		status = model.TaskPendingApproval // 高危 Agent：提交即待审，不入队
+	}
 	task, err := h.deps.Tasks.Create(c.Request.Context(), model.Task{
-		Status:       model.TaskPending,
+		Status:       status,
 		AgentID:      spec.ID,
 		AgentVersion: spec.Version, // 锁定：后续 Agent 更新不影响本任务
 		SessionID:    in.SessionID, // 可选归因分组，空则无会话
@@ -137,13 +143,19 @@ func (h *handlers) submitTask(c *gin.Context) {
 	}
 
 	// M2：提交即入队；执行由 engine.Worker 异步消费（队列化代价：
-	// 提交后短暂 pending，毫秒级）
-	if err := h.deps.Queue.Enqueue(c.Request.Context(), task); err != nil {
-		respondErr(c, err)
-		return
+	// 提交后短暂 pending，毫秒级）。审批流例外：待审任务留在存储里，
+	// approve 放行后才入队（队列闸门语义）。
+	if task.Status == model.TaskPending {
+		if err := h.deps.Queue.Enqueue(c.Request.Context(), task); err != nil {
+			respondErr(c, err)
+			return
+		}
 	}
-	h.audit(c, observability.ActionTaskSubmitted, observability.EntityTask, task.ID,
-		auditDetail(task))
+	detail := auditDetail(task)
+	if task.Status == model.TaskPendingApproval {
+		detail["requires_approval"] = true
+	}
+	h.audit(c, observability.ActionTaskSubmitted, observability.EntityTask, task.ID, detail)
 	c.JSON(http.StatusAccepted, task)
 }
 
@@ -179,6 +191,62 @@ func (h *handlers) cancelTask(c *gin.Context) {
 	h.deps.Dispatcher.Cancel(task.ID)
 	h.audit(c, observability.ActionTaskCancelled, observability.EntityTask, task.ID, nil)
 	c.JSON(http.StatusAccepted, task)
+}
+
+// approveTask 审批通过：pending_approval -> pending 并入队（唯一的放行动作）。
+// Save 先于 Enqueue：落库成功而入队失败是"可见的僵尸"（可查询、可重审），
+// 反之会出现"队列里有但状态仍待审"的静默错配。
+func (h *handlers) approveTask(c *gin.Context) {
+	task, ok := h.loadForReview(c)
+	if !ok {
+		return
+	}
+	if err := task.Transition(model.TaskPending); err != nil {
+		respondErr(c, err)
+		return
+	}
+	if err := h.deps.Tasks.Save(c.Request.Context(), task); err != nil {
+		respondErr(c, err)
+		return
+	}
+	if err := h.deps.Queue.Enqueue(c.Request.Context(), task); err != nil {
+		respondErr(c, err)
+		return
+	}
+	h.audit(c, observability.ActionTaskApproved, observability.EntityTask, task.ID, nil)
+	c.JSON(http.StatusAccepted, task)
+}
+
+// rejectTask 审批驳回：pending_approval -> cancelled（终态）。
+func (h *handlers) rejectTask(c *gin.Context) {
+	task, ok := h.loadForReview(c)
+	if !ok {
+		return
+	}
+	if err := task.Transition(model.TaskCancelled); err != nil {
+		respondErr(c, err)
+		return
+	}
+	if err := h.deps.Tasks.Save(c.Request.Context(), task); err != nil {
+		respondErr(c, err)
+		return
+	}
+	h.audit(c, observability.ActionTaskRejected, observability.EntityTask, task.ID, nil)
+	c.JSON(http.StatusAccepted, task)
+}
+
+// loadForReview 审批端点的公共前置：读任务；非待审态直接回 409（终态/已放行不可再审）。
+func (h *handlers) loadForReview(c *gin.Context) (model.Task, bool) {
+	task, err := h.deps.Tasks.Get(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		respondErr(c, err)
+		return model.Task{}, false
+	}
+	if task.Status != model.TaskPendingApproval {
+		c.JSON(http.StatusConflict, gin.H{"code": codeConflict, "message": "task not awaiting review"})
+		return model.Task{}, false
+	}
+	return task, true
 }
 
 // streamTask SSE 透传：把 Hub 中该任务的事件流（含历史回放）按协议原样发给客户端。

@@ -139,6 +139,11 @@ func runTaskBasics(t *testing.T, mk storeFactory) {
 		t.Fatalf("create should assign id, err=%v", err)
 	}
 
+	// 高危 Agent 的任务提交即待审（M6 审批流）：Create 接受 pending_approval
+	if _, err := s.Create(ctx, model.Task{Status: model.TaskPendingApproval, AgentID: "a_x"}); err != nil {
+		t.Fatalf("create should accept pending_approval, err=%v", err)
+	}
+
 	// 状态迁移后 Save 生效
 	if err := created.Transition(model.TaskRunning); err != nil {
 		t.Fatal(err)

@@ -245,7 +245,7 @@ func NewRedisTaskStore(client redis.UniversalClient) *RedisTaskStore {
 func taskKey(id string) string { return "agentflow:task:" + id }
 
 func (s *RedisTaskStore) Create(ctx context.Context, task model.Task) (model.Task, error) {
-	if task.Status != model.TaskPending {
+	if task.Status != model.TaskPending && task.Status != model.TaskPendingApproval {
 		return model.Task{}, errTaskMustBePending
 	}
 	task.ID = newID("t")

@@ -122,6 +122,34 @@ paths:
         "202": { description: 已请求取消, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/tasks/{id}/approve:
+    post:
+      tags: [tasks]
+      summary: 审批通过（仅 admin；pending_approval -> pending 并入队）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "202": { description: 已放行, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 非待审状态 }
+
+  /api/v1/tasks/{id}/reject:
+    post:
+      tags: [tasks]
+      summary: 审批驳回（仅 admin；pending_approval -> cancelled 终态）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "202": { description: 已驳回, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 非待审状态 }
+
   /api/v1/tasks/{id}/stream:
     get:
       tags: [tasks]
@@ -261,6 +289,7 @@ components:
         type: { type: string, description: 业务类型标签（如 chat / rag / workflow） }
         runtime: { $ref: "#/components/schemas/RuntimeSpec" }
         config: { type: object, description: 原样透传给 Agent 的自定义配置 }
+        require_approval: { type: boolean, description: 管理员声明高危（M6）：其任务提交后待审，admin 审批通过才入队 }
 
     AgentSpecUpdate:
       allOf:
@@ -298,7 +327,7 @@ components:
         agent_version: { type: integer }
         session_id: { type: string }
         trace_context: { type: string, description: 提交侧 traceparent（tracing 启用时），跨队列因果载体 }
-        status: { type: string, enum: [pending, running, succeeded, failed, cancelled, timeout] }
+        status: { type: string, enum: [pending, pending_approval, running, succeeded, failed, cancelled, timeout] }
         attempt_count: { type: integer }
         error: { $ref: "#/components/schemas/Error" }
         usage: { type: object, description: usage 事件累加结果 }

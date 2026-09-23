@@ -22,10 +22,11 @@ func registerAgentRoutes(r gin.IRouter, h *handlers) {
 
 // agentInput 创建请求体（openapi AgentSpecInput）。
 type agentInput struct {
-	Name    string            `json:"name"`
-	Type    string            `json:"type"`
-	Runtime model.RuntimeSpec `json:"runtime"`
-	Config  map[string]any    `json:"config"`
+	Name            string            `json:"name"`
+	Type            string            `json:"type"`
+	Runtime         model.RuntimeSpec `json:"runtime"`
+	Config          map[string]any    `json:"config"`
+	RequireApproval bool              `json:"require_approval"` // M6：管理员声明高危
 }
 
 // agentUpdateInput 更新请求体（AgentSpecUpdate）：嵌入输入 + 乐观锁基准版本。
@@ -40,7 +41,8 @@ func (h *handlers) createAgent(c *gin.Context) {
 		badRequest(c, err.Error())
 		return
 	}
-	spec := model.AgentSpec{Name: in.Name, Type: in.Type, Runtime: in.Runtime, Config: in.Config}
+	spec := model.AgentSpec{Name: in.Name, Type: in.Type, Runtime: in.Runtime, Config: in.Config,
+		RequireApproval: in.RequireApproval}
 	// 显式校验先行：把"业务校验失败"和"存储故障"区分成 400 vs 500
 	if err := spec.Validate(); err != nil {
 		badRequest(c, err.Error())
@@ -80,7 +82,8 @@ func (h *handlers) updateAgent(c *gin.Context) {
 		badRequest(c, err.Error())
 		return
 	}
-	next := model.AgentSpec{Name: in.Name, Type: in.Type, Runtime: in.Runtime, Config: in.Config}
+	next := model.AgentSpec{Name: in.Name, Type: in.Type, Runtime: in.Runtime, Config: in.Config,
+		RequireApproval: in.RequireApproval}
 	if err := next.Validate(); err != nil {
 		badRequest(c, err.Error())
 		return

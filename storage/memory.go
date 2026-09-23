@@ -19,7 +19,8 @@ var (
 	_ IdemStore  = (*MemoryIdemStore)(nil)
 )
 
-// errTaskMustBePending Create 只接受 pending 状态的新任务。
+// errTaskMustBePending Create 只接受 pending / pending_approval 状态的新任务
+// （后者：高危 Agent 的任务提交即待审，M6 审批流）。
 var errTaskMustBePending = errors.New("github.com/qisanfen666/agentflow/storage: task must be pending on create")
 
 // newID 生成带前缀的短随机 ID，如 "a_3f9a2c1d"。
@@ -166,7 +167,7 @@ func NewMemoryTaskStore() *MemoryTaskStore {
 }
 
 func (s *MemoryTaskStore) Create(_ context.Context, task model.Task) (model.Task, error) {
-	if task.Status != model.TaskPending {
+	if task.Status != model.TaskPending && task.Status != model.TaskPendingApproval {
 		return model.Task{}, errTaskMustBePending
 	}
 	s.mu.Lock()

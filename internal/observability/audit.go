@@ -22,6 +22,8 @@ const (
 	ActionAgentDeleted   = "agent_deleted"
 	ActionTaskSubmitted  = "task_submitted"
 	ActionTaskCancelled  = "task_cancelled"
+	ActionTaskApproved   = "task_approved"
+	ActionTaskRejected   = "task_rejected"
 	ActionTaskStarted    = "task_started"
 	ActionTaskRetry      = "task_retry"
 	ActionTaskSucceeded  = "task_succeeded"

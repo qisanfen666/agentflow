@@ -26,14 +26,18 @@ type RuntimeSpec struct {
 // 语义见 docs/contracts/agent-versioning.md：
 // (id, version) 一经创建不可修改，更新即创建新版本；删除为软删除。
 type AgentSpec struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Type      string         `json:"type"` // 业务类型标签（chat / rag / workflow...）
-	Runtime   RuntimeSpec    `json:"runtime"`
-	Config    map[string]any `json:"config,omitempty"` // 原样透传给 Agent 的自定义配置
-	Version   int            `json:"version"`          // 从 1 开始单调递增
-	CreatedAt time.Time      `json:"created_at"`
-	DeletedAt *time.Time     `json:"deleted_at,omitempty"` // 软删除标记，nil = 未删除
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
+	Type    string         `json:"type"` // 业务类型标签（chat / rag / workflow...）
+	Runtime RuntimeSpec    `json:"runtime"`
+	Config  map[string]any `json:"config,omitempty"` // 原样透传给 Agent 的自定义配置
+	// RequireApproval 管理员声明此 Agent 高危：其任务提交后进入 pending_approval，
+	// admin 审批通过才入队。风险决策权在管理端（spec 经乐观锁变更、审计留痕），
+	// 不交给调用方——真正危险的调用者不会自审。
+	RequireApproval bool       `json:"require_approval,omitempty"`
+	Version         int        `json:"version"` // 从 1 开始单调递增
+	CreatedAt       time.Time  `json:"created_at"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"` // 软删除标记，nil = 未删除
 }
 
 // Validate 校验 spec 的必填性约束，在创建与更新时调用。

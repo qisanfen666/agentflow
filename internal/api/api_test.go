@@ -598,6 +598,124 @@ func TestGovernanceRateLimited(t *testing.T) {
 	}
 }
 
+// ---------- 审批流（M6） ----------
+
+// TestApprovalFlow 高危 Agent 全链路：提交即待审（不入队不执行）→ approve 放行
+// → 入队执行至终态；重复审批 409。
+func TestApprovalFlow(t *testing.T) {
+	srv := setupAPI(t, &scriptedRuntime{events: []runtime.Event{{Type: runtime.EventDone, TaskID: "t"}}})
+
+	resp, body := postJSON(t, srv, "/api/v1/agents", map[string]any{
+		"name": "danger", "type": "chat", "require_approval": true,
+		"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+	})
+	if resp.StatusCode != http.StatusCreated || !strings.Contains(body, `"require_approval":true`) {
+		t.Fatalf("create high-risk agent: %d %s", resp.StatusCode, body)
+	}
+	var agent model.AgentSpec
+	json.Unmarshal([]byte(body), &agent)
+
+	resp, body = postJSON(t, srv, "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("submit: %d %s", resp.StatusCode, body)
+	}
+	var task model.Task
+	json.Unmarshal([]byte(body), &task)
+	if task.Status != model.TaskPendingApproval {
+		t.Fatalf("high-risk submit should be pending_approval, got %s", task.Status)
+	}
+
+	// 待审期间不执行：等 500ms 状态不变
+	time.Sleep(500 * time.Millisecond)
+	cur := getJSON(t, srv.URL+"/api/v1/tasks/"+task.ID)
+	if cur.Status != model.TaskPendingApproval {
+		t.Fatalf("task must not execute before approval, got %s", cur.Status)
+	}
+
+	// 审批放行 -> 入队执行到终态
+	resp, _ = postJSON(t, srv, "/api/v1/tasks/"+task.ID+"/approve", map[string]any{})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("approve: %d", resp.StatusCode)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		cur = getJSON(t, srv.URL+"/api/v1/tasks/"+task.ID)
+		if cur.Status.Final() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if cur.Status != model.TaskSucceeded {
+		t.Fatalf("after approve should execute to succeeded, got %s", cur.Status)
+	}
+
+	// 终态后重复审批 -> 409
+	resp, _ = postJSON(t, srv, "/api/v1/tasks/"+task.ID+"/approve", map[string]any{})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("approve on final task want 409, got %d", resp.StatusCode)
+	}
+}
+
+// TestApprovalReject 驳回：pending_approval -> cancelled 终态。
+func TestApprovalReject(t *testing.T) {
+	srv := setupAPI(t, &scriptedRuntime{})
+
+	resp, body := postJSON(t, srv, "/api/v1/agents", map[string]any{
+		"name": "danger2", "type": "chat", "require_approval": true,
+		"runtime": map[string]any{"type": "python-http", "host": "http://localhost:1"},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create agent: %d %s", resp.StatusCode, body)
+	}
+	var agent model.AgentSpec
+	json.Unmarshal([]byte(body), &agent)
+
+	resp, body = postJSON(t, srv, "/api/v1/tasks", map[string]any{"agent_id": agent.ID, "payload": map[string]any{}})
+	var task model.Task
+	json.Unmarshal([]byte(body), &task)
+
+	resp, _ = postJSON(t, srv, "/api/v1/tasks/"+task.ID+"/reject", map[string]any{})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("reject: %d", resp.StatusCode)
+	}
+	if cur := getJSON(t, srv.URL+"/api/v1/tasks/"+task.ID); cur.Status != model.TaskCancelled {
+		t.Fatalf("after reject want cancelled, got %s", cur.Status)
+	}
+}
+
+// TestApproveRequiresAdmin 审批权仅限 admin。
+func TestApproveRequiresAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	auth := NewAPIKeyAuth([]APIKeyEntry{{Key: "k-sub", Roles: []string{RoleSubmitter}}})
+	agents := storage.NewMemoryAgentStore()
+	tasks := storage.NewMemoryTaskStore()
+	hub := dispatch.NewHub()
+	d := dispatch.New(agents, tasks, hub, observability.Telemetry{}, &scriptedRuntime{})
+	srv := httptest.NewServer(NewRouter(Dependencies{
+		Agents: agents, Tasks: tasks, Dispatcher: d, Hub: hub,
+		Queue: engine.NewMemoryQueue(), Idem: storage.NewMemoryIdemStore(),
+		Tools: registry.New(storage.NewMemoryToolStore()), Auth: auth,
+	}))
+	t.Cleanup(srv.Close)
+
+	resp, _ := postAuth(t, srv.URL, "k-sub", "/api/v1/tasks/t_x/approve", map[string]any{})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("submitter approve want 403, got %d", resp.StatusCode)
+	}
+}
+
+func getJSON(t *testing.T, url string) model.Task {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var task model.Task
+	json.NewDecoder(resp.Body).Decode(&task)
+	return task
+}
+
 // ---------- 审计 ----------
 
 // collectAudit 测试用审计收集器（与 dispatch 包的 bufAudit 同构，

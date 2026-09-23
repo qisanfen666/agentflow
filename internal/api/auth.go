@@ -49,6 +49,12 @@ var permissionMatrix = map[string]map[string][]string{
 		http.MethodGet:    {RoleAdmin, RoleSubmitter, RoleReader},
 		http.MethodDelete: {RoleAdmin, RoleSubmitter},
 	},
+	"/api/v1/tasks/:id/approve": {
+		http.MethodPost: {RoleAdmin}, // 审批权归管理员（M6）
+	},
+	"/api/v1/tasks/:id/reject": {
+		http.MethodPost: {RoleAdmin},
+	},
 	"/api/v1/tasks/:id/stream": {
 		http.MethodGet: {RoleAdmin, RoleSubmitter, RoleReader},
 	},

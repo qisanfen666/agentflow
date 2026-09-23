@@ -9,12 +9,13 @@ import (
 type TaskStatus string
 
 const (
-	TaskPending   TaskStatus = "pending"
-	TaskRunning   TaskStatus = "running"
-	TaskSucceeded TaskStatus = "succeeded"
-	TaskFailed    TaskStatus = "failed"
-	TaskCancelled TaskStatus = "cancelled"
-	TaskTimeout   TaskStatus = "timeout"
+	TaskPending         TaskStatus = "pending"
+	TaskPendingApproval TaskStatus = "pending_approval" // 高危 Agent 的任务提交后先待审（M6），未入队
+	TaskRunning         TaskStatus = "running"
+	TaskSucceeded       TaskStatus = "succeeded"
+	TaskFailed          TaskStatus = "failed"
+	TaskCancelled       TaskStatus = "cancelled"
+	TaskTimeout         TaskStatus = "timeout"
 )
 
 // finalStates 终态集合：进入后不可再迁移。
@@ -27,10 +28,15 @@ var finalStates = map[TaskStatus]bool{
 
 // transitions 合法迁移表，与合同文档的迁移表一一对应：
 //
-//	pending  -> running, cancelled
-//	running  -> succeeded, failed, timeout, pending(重试), cancelled
+//	pending          -> running, pending_approval, cancelled
+//	pending_approval -> pending(审批通过), cancelled(驳回/取消)
+//	running          -> succeeded, failed, timeout, pending(重试), cancelled
 var transitions = map[TaskStatus]map[TaskStatus]bool{
-	TaskPending: {TaskRunning: true, TaskCancelled: true},
+	TaskPending: {TaskRunning: true, TaskPendingApproval: true, TaskCancelled: true},
+	TaskPendingApproval: {
+		TaskPending:   true, // approve：放行入队
+		TaskCancelled: true, // reject 或用户取消
+	},
 	TaskRunning: {
 		TaskSucceeded: true,
 		TaskFailed:    true,
