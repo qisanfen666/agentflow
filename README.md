@@ -130,6 +130,20 @@ docker compose -f deploy/docker-compose.yml up -d
 告警立场：控制面只产生信号（指标/审计），通知渠道与告警规则归消费侧
 （Alertmanager/Grafana Rules），不内建 webhook。
 
+## 治理（M6）
+
+三层防线，从外到内：
+
+| 防线 | 机制 | 拒绝语义 |
+|---|---|---|
+| **认证授权** | X-API-Key + 三角色方法级权限矩阵（admin 全权 / submitter 提交消费 / reader 只读） | 401 未认证 / 403 越权 |
+| **提交守门** | Policy 规则链（K8s admission 同构）：限流令牌桶 + token 日预算（按实际 usage 回报扣减，自然日重置） | 429 `RATE_LIMITED`（带 Retry-After）/ `BUDGET_EXCEEDED` |
+| **审批闸门** | `AgentSpec.require_approval` 管理员声明高危：任务提交即 `pending_approval`（不入队不执行），仅 admin 可 approve 放行 / reject 驳回 | 待审任务对执行面不可见；审批权不归调用方 |
+
+治理决策权归属（面试主线）：风险声明在**管理端**（Agent spec 经乐观锁变更、审计留痕），
+不交给调用方自选——真正危险的调用者不会自审。嵌入形态下认证可整体替换：
+`Dependencies.Auth` 注入宿主中间件即可。
+
 ## 测试与冒烟
 
 ```powershell
@@ -139,6 +153,7 @@ go test ./...                 # 单元 + 合同 + Redis 集成（不可达自动
 ./scripts/smoke-m3.ps1        # 双 Runtime 路由 + 容器零残留 + MCP（需 docker）
 ./scripts/smoke-m4.ps1        # 库形态嵌入：宿主路由与挂载控制面共存（需 python3）
 ./scripts/smoke-m5.ps1        # 观测栈闭环：指标进 Prometheus + 看板进 Grafana（需 docker）
+./scripts/smoke-m6.ps1        # 治理三层防线：认证/审批/预算/限流（需 python3）
 ```
 
 ## 配置参考（Config）
@@ -158,6 +173,10 @@ go test ./...                 # 单元 + 合同 + Redis 集成（不可达自动
 | Observability.MetricsEnabled | false | 挂 GET /metrics |
 | Observability.OTLPEndpoint | 空（关） | OTLP gRPC 地址（如 localhost:4317） |
 | Observability.ServiceName | agentflow | OTel service.name |
+| Auth.Enabled | false | 启用 API Key 认证授权 |
+| Auth.Keys | — | `[{key, roles}]`，角色：admin/submitter/reader |
+| Governance.RateLimitPerMin | 0（不限） | 全局提交速率上限/分钟 |
+| Governance.DailyTokenBudget | 0（不限） | 自然日 token 预算（按实际 usage 扣减） |
 
 ## 目录结构
 

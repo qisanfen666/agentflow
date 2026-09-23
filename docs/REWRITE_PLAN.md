@@ -131,7 +131,7 @@ data: [DONE]
 | **M3 执行面** ✅ 2026-09-16 | runtime 公开化：python-http + Docker 沙箱（CLI 方案：一次性容器生命周期，只读/内存/CPU 限制，网络禁用明确不支持）、SSE 内核抽取复用、Tool Registry（jsonschema v6 校验 + ToolStore 双实现 + MCP 导出 2 端点） | 冒烟：双 Runtime 同 server 各跑一任务成功 + 容器零残留 + 工具全流程 409/400/MCP |
 | **M4 库收口 v0.1** ✅ 2026-09-19 | facade `New/Start/Stop/Mount`、优雅关停、README、examples 补全（embed 嵌入形态）、终态不可逆下沉存储层（修复取消复活竞态） | 打 tag v0.1，公开 API 冻结 |
 | **M5 可观测性** ✅ 2026-09-20 | 审计落地（append-only JSONL，11 类动作全链路埋点，session_id 归因）、Prometheus 指标（私有 registry：tasks/retries/tokens/duration，token 计数按 model 分维）、OTel 追踪（三层 span + traceparent 穿透执行面；队列两侧 Link 补接待做）、观测栈 compose（Prometheus+Grafana 四面板预置） | 冒烟：指标进 Prometheus（126=3×42 对账）+ 看板预置进 Grafana |
-| **M6 治理**（旧 Phase 4） | Policy Engine、RBAC、Rate Limiting、Cost Guardrails、审批流 | —— |
+| **M6 治理** ✅ 2026-09-23 | 认证授权（API Key + 三角色方法级矩阵，Auth 中间件可插拔）、Policy 规则链（限流令牌桶 + token 日预算按实扣减，429 守门）、审批流（pending_approval 状态机 + admin 审批端点 + 队列闸门语义） | 冒烟：三层防线 17 项断言全过（认证三态/approve·reject/预算·限流 429） |
 
 顺序要点：**facade 收口提到 M4 而不是拖到最后** —— "库形态"是项目身份，必须尽早用真实 facade 使用体验验证目录结构。
 
