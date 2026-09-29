@@ -4,3 +4,6 @@ tmp/
 
 # 本地环境
 .env
+
+# 本地留档（不进仓库）
+docs/RETROSPECTIVE.md
