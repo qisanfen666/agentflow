@@ -8,6 +8,7 @@ tmp/
 # PR Review demo 运行态产物（examples/pr-review/scripts/make-testdata.ps1 再生成）
 examples/pr-review/diffs/
 examples/pr-review/testdata/*/.git/
+examples/pr-review/testdata/*/.git_backup/
 examples/pr-review/testdata/svc-orders/api.go
 examples/pr-review/testdata/svc-orders/orders.go
 examples/pr-review/testdata/svc-payments/payment.go
