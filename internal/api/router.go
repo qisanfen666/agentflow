@@ -23,17 +23,18 @@ import (
 
 // Dependencies 由调用方（main / 测试 / facade）手工注入的组件。
 type Dependencies struct {
-	Agents     storage.AgentStore
-	Tasks      storage.TaskStore
-	Dispatcher *dispatch.Dispatcher
-	Hub        *dispatch.Hub
-	Queue      engine.Queue              // 提交即入队，由 engine.Worker 消费执行
-	Idem       storage.IdemStore         // 提交幂等占位（memory / redis 双实现）
-	Tools      *registry.Registry        // 工具注册表（校验 + MCP 导出）
-	Audit      observability.AuditLogger // API 层审计（创建/更新/删除/提交/取消）；nil = 关闭
-	Metrics    *observability.Metrics    // 非 nil 时挂 GET /metrics
-	Auth       gin.HandlerFunc           // 认证授权中间件；nil = 关闭。可注入宿主自定义实现
-	Policy     policy.Chain              // 提交前治理规则链；空链 = 不治理
+	Agents      storage.AgentStore
+	Tasks       storage.TaskStore
+	Dispatcher  *dispatch.Dispatcher
+	Hub         *dispatch.Hub
+	Queue       engine.Queue              // 提交即入队，由 engine.Worker 消费执行
+	Idem        storage.IdemStore         // 提交幂等占位（memory / redis 双实现）
+	Tools       *registry.Registry        // 工具注册表（校验 + MCP 导出）
+	Audit       observability.AuditLogger // API 层审计（创建/更新/删除/提交/取消）；nil = 关闭
+	Metrics     *observability.Metrics    // 非 nil 时挂 GET /metrics
+	Auth        gin.HandlerFunc           // 认证授权中间件；nil = 关闭。可注入宿主自定义实现
+	Policy      policy.Chain              // 提交前治理规则链；空链 = 不治理
+	RuntimeTypes map[string]bool          // 已注册 Runtime 类型集合；nil = 跳过校验（Panel 总会注入）
 }
 
 // handlers 共享依赖的 handler 集合。各端点方法分属 agent_handler.go / task_handler.go。

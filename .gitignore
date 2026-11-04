@@ -5,5 +5,13 @@ tmp/
 # 本地环境
 .env
 
+# PR Review demo 运行态产物（examples/pr-review/scripts/make-testdata.ps1 再生成）
+examples/pr-review/diffs/
+examples/pr-review/testdata/*/.git/
+examples/pr-review/testdata/svc-orders/api.go
+examples/pr-review/testdata/svc-orders/orders.go
+examples/pr-review/testdata/svc-payments/payment.go
+
 # 本地留档（不进仓库）
 docs/RETROSPECTIVE.md
+docs/INTERVIEW_QA.md

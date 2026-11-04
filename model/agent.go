@@ -4,7 +4,6 @@ package model
 
 import (
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -55,8 +54,12 @@ func (a *AgentSpec) Validate() error {
 		}
 	case RuntimeDocker:
 		// image 可选，运行时用沙箱默认镜像
+	case "":
+		return errors.New("runtime.type is required")
 	default:
-		return fmt.Errorf("unsupported runtime type: %q", a.Runtime.Type)
+		// 自定义 Runtime 类型（WithRuntime 注入）：本包零依赖、不知道注册表，
+		// 只保证非空；"类型是否已注册"由 API 层对注册集合校验（创建即 400），
+		// dispatcher 执行时的 no-runtime 检查兜底。
 	}
 	return nil
 }

@@ -1,0 +1,13 @@
+# mock claude 镜像：回放录制的 stream-json 会话（无需 API key 的冒烟/演示基线）。
+#
+#   cd examples/pr-review/docker
+#   docker build -f Dockerfile.claude-mock -t agentflow-claude-mock:latest .
+#
+# 与真实镜像同构：ENTRYPOINT 后接收同样的 claude 参数（忽略），吞掉 stdin prompt，
+# 按录制会话逐行回放——控制面/中台/GUI 走的是与真实模式完全一致的链路。
+FROM alpine:3.20
+
+COPY mock/replay.sh /replay.sh
+COPY mock/session.ndjson /session.ndjson
+
+ENTRYPOINT ["/replay.sh"]

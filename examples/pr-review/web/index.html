@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR Review 中台 · agentflow demo</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #161d26; --panel2: #1c2530; --border: #2a3542;
+    --text: #d7e0ea; --dim: #7d8da0; --accent: #4da3ff; --green: #3fb950;
+    --red: #f85149; --orange: #d29922; --blue: #4da3ff; --purple: #ab7df8;
+    --mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--border); flex: none; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; font-size: 12px; border: 1px solid var(--border); color: var(--dim); }
+  .chip.mode-mock { color: var(--purple); border-color: var(--purple); }
+  .chip.mode-real { color: var(--green); border-color: var(--green); }
+  header .spacer { flex: 1; }
+  header a { color: var(--accent); font-size: 12px; text-decoration: none; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+
+  /* 左：PR 列表 */
+  #side { width: 320px; flex: none; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--panel); }
+  #newpr { padding: 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  #newpr .row { display: flex; gap: 8px; }
+  select, input, button { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none; }
+  select:focus, input:focus { border-color: var(--accent); }
+  button { cursor: pointer; transition: background .15s; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; }
+  button.ghost:hover { background: var(--panel2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #prlist { flex: 1; overflow-y: auto; padding: 8px; }
+  .pr-card { padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; margin-bottom: 6px; }
+  .pr-card:hover { background: var(--panel2); }
+  .pr-card.sel { background: var(--panel2); border-color: var(--accent); }
+  .pr-card .t { font-weight: 600; font-size: 13px; }
+  .pr-card .m { color: var(--dim); font-size: 12px; display: flex; gap: 8px; margin-top: 2px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .st-pending .dot, .st-cancelled .dot { background: var(--dim); }
+  .st-pending_approval .dot { background: var(--orange); }
+  .st-running .dot { background: var(--blue); animation: pulse 1.2s infinite; }
+  .st-succeeded .dot { background: var(--green); }
+  .st-failed .dot, .st-timeout .dot { background: var(--red); }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .prod-tag { color: var(--orange); font-size: 11px; border: 1px solid var(--orange); padding: 0 5px; border-radius: 4px; }
+
+  /* 右：详情 */
+  #detail { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #meta { padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  #meta .title { font-size: 15px; font-weight: 600; }
+  #meta .sub { color: var(--dim); font-size: 12px; margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  #meta .actions { margin-top: 10px; display: flex; gap: 8px; }
+  .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--dim); }
+
+  #panes { flex: 1; display: flex; min-height: 0; }
+  #live { flex: 1.2; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 0; }
+  #result { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .pane-h { padding: 8px 14px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--border); background: var(--panel); display: flex; justify-content: space-between; flex: none; }
+  #console { flex: 1; overflow-y: auto; padding: 10px 14px; font-family: var(--mono); font-size: 12.5px; }
+  #console .tok { white-space: pre-wrap; word-break: break-word; }
+  #console .tool { color: var(--accent); margin: 3px 0; }
+  #console .toolres { color: var(--dim); margin: 2px 0 6px; padding-left: 10px; border-left: 2px solid var(--border); white-space: pre-wrap; max-height: 90px; overflow: hidden; font-size: 11.5px; }
+  #console .thought { color: var(--purple); font-style: italic; margin: 3px 0; }
+  #console .err { color: var(--red); }
+  #console .done { color: var(--green); margin-top: 6px; }
+  #review { flex: 1; overflow-y: auto; padding: 14px 18px; }
+  .md h3 { color: var(--accent); margin: 12px 0 6px; font-size: 14px; }
+  .md h2 { color: var(--accent); margin: 12px 0 6px; font-size: 15px; }
+  .md p { margin: 6px 0; }
+  .md ul { margin: 6px 0 6px 20px; }
+  .md li { margin: 3px 0; }
+  .md code { font-family: var(--mono); background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .md hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  .conclusion { display: inline-block; margin: 10px 0; padding: 4px 14px; border-radius: 6px; font-weight: 700; }
+  .c-APPROVE { background: rgba(63,185,80,.15); color: var(--green); }
+  .c-REQUEST_CHANGES { background: rgba(248,81,73,.15); color: var(--red); }
+  .c-FAILED, .c-UNKNOWN { background: rgba(210,153,34,.15); color: var(--orange); }
+  .usage { font-size: 12px; color: var(--dim); }
+  .st-label { font-size: 12px; }
+  .st-pending { color: var(--dim); } .st-pending_approval { color: var(--orange); }
+  .st-running { color: var(--blue); } .st-succeeded { color: var(--green); }
+  .st-failed, .st-timeout { color: var(--red); } .st-cancelled { color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>PR Review <span>中台</span></h1>
+  <span class="chip" id="mode">—</span>
+  <span class="chip" id="budget">—</span>
+  <span class="chip" id="total">—</span>
+  <div class="spacer"></div>
+  <a href="/api/metrics" target="_blank">/metrics</a>
+
+</header>
+
+<main>
+  <div id="side">
+    <form id="newpr">
+      <div class="row">
+        <select id="repo"></select>
+        <button class="primary" type="submit">新建 PR</button>
+      </div>
+      <input id="title" placeholder="PR 标题（可空）">
+    </form>
+    <div id="prlist"></div>
+  </div>
+
+  <div id="detail">
+    <div class="empty" id="placeholder">← 新建一个 PR，模拟 CI 触发评审</div>
+    <div id="meta" style="display:none">
+      <div class="title"></div>
+      <div class="sub"></div>
+      <div class="actions"></div>
+    </div>
+    <div id="panes" style="display:none">
+      <div id="live">
+        <div class="pane-h"><span>AGENT 直播（SSE）</span><span class="usage" id="live-usage"></span></div>
+        <div id="console"></div>
+      </div>
+      <div id="result">
+        <div class="pane-h"><span>评审结论（回写）</span><span class="usage" id="rv-usage"></span></div>
+        <div id="review"><span style="color:var(--dim)">等待任务完成…</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+'use strict';
+let board = null, selected = null, es = null;
+
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---- 迷你 Markdown 渲染（评审结论用；刻意不引外部库） ----
+function md(src) {
+  src = esc(src || '');
+  const lines = src.split('\n'); let html = '', inUl = false;
+  const inline = t => t
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  for (let l of lines) {
+    l = l.trimEnd();
+    if (/^###\s/.test(l)) { html += `<h3>${inline(l.slice(4))}</h3>`; continue; }
+    if (/^##\s/.test(l))  { html += `<h2>${inline(l.slice(3))}</h2>`; continue; }
+    if (/^---+\s*$/.test(l)) { html += '<hr>'; continue; }
+    if (/^[-*]\s/.test(l)) { if (!inUl) { html += '<ul>'; inUl = true; } html += `<li>${inline(l.slice(2))}</li>`; continue; }
+    if (inUl) { html += '</ul>'; inUl = false; }
+    if (l === '') continue;
+    html += `<p>${inline(l)}</p>`;
+  }
+  if (inUl) html += '</ul>';
+  return html;
+}
+
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: {'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.status);
+  return r.json();
+}
+
+// ---- 看板轮询 ----
+async function refresh() {
+  try { board = await api('GET', '/api/board'); } catch { return; }
+  $('#mode').textContent = board.mode === 'real' ? 'REAL · claude CLI' : 'MOCK · 回放';
+  $('#mode').className = 'chip mode-' + board.mode;
+  $('#budget').textContent = `日预算 ${(board.daily_token_budget/1e6).toFixed(1)}M tok · 限流 ${board.rate_limit_per_min}/min`;
+  $('#total').textContent = `累计 ${board.total_tokens} tok`;
+
+  const sel = $('#repo'); sel.innerHTML = board.repos.map(r =>
+    `<option value="${r.name}">${r.name}${r.prod ? '（生产）' : ''}</option>`).join('');
+
+  $('#prlist').innerHTML = board.prs.map(p => `
+    <div class="pr-card ${p.number===selected?'sel':''}" onclick="select(${p.number})">
+      <div class="t">#${p.number} ${esc(p.title)}</div>
+      <div class="m">
+        <span class="st-${p.task_status||'pending'}"><span class="dot"></span> ${p.task_status||'created'}</span>
+        <span>${p.repo}</span>${p.prod?'<span class="prod-tag">PROD</span>':''}
+      </div>
+    </div>`).join('') || '<div style="color:var(--dim);padding:20px;text-align:center">还没有 PR</div>';
+
+  if (selected) renderDetail(board.prs.find(p => p.number === selected));
+}
+
+// ---- 详情 ----
+function renderDetail(p) {
+  if (!p) return;
+  $('#placeholder').style.display = 'none';
+  $('#meta').style.display = ''; $('#panes').style.display = '';
+  $('#meta .title').textContent = `#${p.number} ${p.title}`;
+  $('#meta .sub').innerHTML = `
+    <span>${p.repo}</span><span>by ${p.author}</span>
+    <span class="st-${p.task_status}">任务 ${p.task_status||'—'}</span>
+    <span>agent ${p.agent_id||'—'}</span>
+    <span>session pr-${p.repo}-${p.number}</span>
+    ${p.task_error?`<span style="color:var(--red)">${esc(p.task_error)}</span>`:''}`;
+
+  const acts = $('#meta .actions'); acts.innerHTML = '';
+  const mk = (label, cls, fn) => { const b = document.createElement('button'); b.textContent = label; b.className = cls; b.onclick = fn; acts.appendChild(b); };
+  const inflight = p.task_status && !['succeeded','failed','cancelled','timeout','submit_failed'].includes(p.task_status);
+  if (!inflight) mk('提交评审', 'primary', () => act('submit'));
+  if (p.task_status === 'pending_approval') {
+    mk('✓ 审批通过', 'primary', () => act('approve'));
+    mk('✗ 驳回', 'ghost', () => act('reject'));
+  }
+  if (inflight && p.task_status !== 'pending_approval') mk('查看直播 ↓', 'ghost', () => attachStream(p.number));
+
+  const rv = p.review;
+  if (rv) {
+    $('#review').innerHTML =
+      `<div class="conclusion c-${rv.conclusion}">${rv.conclusion}</div>` + md(rv.markdown);
+    $('#rv-usage').textContent = `${rv.prompt_tokens} in + ${rv.completion_tokens} out tok`;
+  } else {
+    $('#review').innerHTML = '<span style="color:var(--dim)">等待任务完成…</span>';
+    $('#rv-usage').textContent = '';
+  }
+}
+
+async function act(kind) {
+  try { await api('POST', `/api/board/prs/${selected}/${kind}`); refresh(); }
+  catch (e) { alert(e.message); }
+}
+
+// ---- SSE 直播 ----
+function select(num) {
+  selected = num; refresh(); attachStream(num);
+}
+function attachStream(num) {
+  if (es) es.close();
+  const con = $('#console'); con.innerHTML = ''; $('#live-usage').textContent = '';
+  if (!board.prs.find(p => p.number === num)?.task_id) return;
+  es = new EventSource(`/api/board/prs/${num}/events`);
+  es.onmessage = ev => {
+    if (ev.data === '[DONE]') { con.insertAdjacentHTML('beforeend', '<div class="done">—— 流结束 ——</div>'); es.close(); setTimeout(refresh, 400); return; }
+    handleEvent(JSON.parse(ev.data), con);
+    con.scrollTop = con.scrollHeight;
+  };
+  es.onerror = () => { es.close(); };
+}
+let liveTok = { in: 0, out: 0 };
+function handleEvent(e, con) {
+  switch (e.type) {
+    case 'token': con.insertAdjacentHTML('beforeend', `<span class="tok">${esc(e.content)}</span>`); break;
+    case 'event':
+      if (e.event === 'tool_call') {
+        const a = e.data && e.data.args ? ' ' + JSON.stringify(e.data.args) : '';
+        con.insertAdjacentHTML('beforeend', `<div class="tool">⚙ ${esc((e.data&&e.data.tool)||'?')}${esc(a)}</div>`);
+      } else if (e.event === 'tool_result') {
+        let c = e.data && e.data.content; if (typeof c !== 'string') c = JSON.stringify(c);
+        con.insertAdjacentHTML('beforeend', `<div class="toolres">${esc((c||'').slice(0,400))}</div>`);
+      } else if (e.event === 'thought') {
+        con.insertAdjacentHTML('beforeend', `<div class="thought">… claude 会话就绪</div>`);
+      }
+      break;
+    case 'usage':
+      liveTok.in += e.prompt_tokens||0; liveTok.out += e.completion_tokens||0;
+      $('#live-usage').textContent = `in ${liveTok.in} · out ${liveTok.out}${e.model?' · '+e.model:''}`;
+      break;
+    case 'error':
+      con.insertAdjacentHTML('beforeend', `<div class="err">✗ ${esc(e.code)}: ${esc(e.message)}</div>`); break;
+    case 'done':
+      con.insertAdjacentHTML('beforeend', '<div class="done">✓ 任务完成</div>'); break;
+  }
+}
+
+// ---- 新建 PR（模拟 CI webhook） ----
+$('#newpr').onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const p = await api('POST', '/api/board/prs', { repo: $('#repo').value, title: $('#title').value });
+    $('#title').value = '';
+    liveTok = { in: 0, out: 0 };
+    select(p.number);
+  } catch (err) { alert(err.message); }
+};
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

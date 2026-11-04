@@ -1,0 +1,20 @@
+# 真实 claude 镜像：node + Claude Code CLI（本地构建，不上传仓库 registry）
+#
+#   docker build -f examples/pr-review/docker/Dockerfile.claude -t agentflow-claude:latest .
+#   （构建上下文为本目录即可：docker build -f Dockerfile.claude -t agentflow-claude:latest .）
+#
+# 运行时由 claude-code Runtime 以一次性容器调用：
+#   docker run --rm -i -v <PR目录>:/workspace:ro -e ANTHROPIC_API_KEY=... \
+#     agentflow-claude:latest claude -p --output-format stream-json --verbose ...
+# key 只经 spec.Env 注入容器，不落任何文件。
+FROM node:20-slim
+
+# git/claude 自身需要；ca-certificates 走 API TLS
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @anthropic-ai/claude-code
+
+WORKDIR /workspace
+ENTRYPOINT ["claude"]

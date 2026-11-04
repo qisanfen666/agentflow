@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/qisanfen666/agentflow/model"
+	"github.com/qisanfen666/agentflow/runtime"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -190,3 +193,96 @@ func TestPanelWorkerExecutesTask(t *testing.T) {
 }
 
 func strReader(s string) io.Reader { return strings.NewReader(s) }
+
+// ---------- 自定义 Runtime 注入（WithRuntime） ----------
+
+// fakeRuntime 最小自定义 Runtime：发一条 token + done 即结束。
+type fakeRuntime struct{ typ string }
+
+func (f *fakeRuntime) Type() string { return f.typ }
+func (f *fakeRuntime) Health(_ context.Context, _ model.RuntimeSpec) error { return nil }
+func (f *fakeRuntime) Execute(ctx context.Context, req runtime.Request) <-chan runtime.Event {
+	ch := make(chan runtime.Event, 2)
+	go func() {
+		defer close(ch)
+		ch <- runtime.Event{Type: runtime.EventToken, Content: "hi"}
+		ch <- runtime.Event{Type: runtime.EventDone, TaskID: req.TaskID}
+	}()
+	return ch
+}
+
+// TestWithRuntimeDuplicateType 类型名与内置/其他自定义重复：New 失败（防路由被静默覆盖）。
+func TestWithRuntimeDuplicateType(t *testing.T) {
+	if _, err := New(Config{}, WithRuntime(&fakeRuntime{typ: "python-http"})); err == nil {
+		t.Fatal("与内置类型重名应当报错")
+	}
+	if _, err := New(Config{}, WithRuntime(&fakeRuntime{typ: "x"}), WithRuntime(&fakeRuntime{typ: "x"})); err == nil {
+		t.Fatal("自定义之间重名应当报错")
+	}
+}
+
+// TestWithRuntimeCustom 端到端：自定义类型可注册 Agent（201）、未注册类型创建即 400、
+// 任务真实路由到自定义 Runtime 并落终态 succeeded。
+func TestWithRuntimeCustom(t *testing.T) {
+	panel, err := New(Config{Runtimes: []string{}}, // 关掉内置，只留自定义
+		WithRuntime(&fakeRuntime{typ: "claude-code"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := panel.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer panel.Stop(ctx)
+	srv := httptest.NewServer(panel.Router())
+	defer srv.Close()
+
+	// 注册自定义类型 Agent：model 放行 + API 注册表校验通过
+	r, _ := http.Post(srv.URL+"/api/v1/agents", "application/json",
+		strReader(`{"name":"pr-reviewer","type":"review","runtime":{"type":"claude-code"}}`))
+	if r.StatusCode != http.StatusCreated {
+		t.Fatalf("注册自定义 Runtime Agent: %d", r.StatusCode)
+	}
+	var agent struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(r.Body).Decode(&agent)
+	r.Body.Close()
+
+	// 拼错/未注册类型：创建即 400（fail-fast）
+	r, _ = http.Post(srv.URL+"/api/v1/agents", "application/json",
+		strReader(`{"name":"typo","type":"review","runtime":{"type":"claude-cod"}}`))
+	if r.StatusCode != http.StatusBadRequest {
+		t.Fatalf("未注册类型应 400: %d", r.StatusCode)
+	}
+	r.Body.Close()
+
+	// 提交任务 -> 路由到自定义 Runtime -> succeeded
+	r, _ = http.Post(srv.URL+"/api/v1/tasks", "application/json",
+		strReader(`{"agent_id":"`+agent.ID+`","payload":{"q":"x"}}`))
+	var task struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(r.Body).Decode(&task)
+	r.Body.Close()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := http.Get(srv.URL + "/api/v1/tasks/" + task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cur struct {
+			Status string `json:"status"`
+		}
+		json.NewDecoder(resp.Body).Decode(&cur)
+		resp.Body.Close()
+		if cur.Status == "succeeded" {
+			return
+		}
+		if cur.Status == "failed" || time.Now().After(deadline) {
+			t.Fatalf("未达 succeeded，当前 %s", cur.Status)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

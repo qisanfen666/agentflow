@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -35,6 +36,16 @@ type agentUpdateInput struct {
 	BaseVersion int `json:"base_version"`
 }
 
+// validateRuntimeType 校验 runtime.type 已注册：自定义类型（WithRuntime 注入）放行，
+// 拼错/未注册在创建/更新时即 400（fail-fast，而非执行时才发现）。
+// deps.RuntimeTypes 为 nil 时跳过（手工装配 Dependencies 的场景，dispatcher 兜底）。
+func (h *handlers) validateRuntimeType(t string) error {
+	if h.deps.RuntimeTypes == nil || h.deps.RuntimeTypes[t] {
+		return nil
+	}
+	return errors.New("runtime.type not registered: " + t)
+}
+
 func (h *handlers) createAgent(c *gin.Context) {
 	var in agentInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -45,6 +56,10 @@ func (h *handlers) createAgent(c *gin.Context) {
 		RequireApproval: in.RequireApproval}
 	// 显式校验先行：把"业务校验失败"和"存储故障"区分成 400 vs 500
 	if err := spec.Validate(); err != nil {
+		badRequest(c, err.Error())
+		return
+	}
+	if err := h.validateRuntimeType(spec.Runtime.Type); err != nil {
 		badRequest(c, err.Error())
 		return
 	}
@@ -85,6 +100,10 @@ func (h *handlers) updateAgent(c *gin.Context) {
 	next := model.AgentSpec{Name: in.Name, Type: in.Type, Runtime: in.Runtime, Config: in.Config,
 		RequireApproval: in.RequireApproval}
 	if err := next.Validate(); err != nil {
+		badRequest(c, err.Error())
+		return
+	}
+	if err := h.validateRuntimeType(next.Runtime.Type); err != nil {
 		badRequest(c, err.Error())
 		return
 	}

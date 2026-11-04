@@ -98,7 +98,7 @@ func NewAPIKeyAuth(keys []APIKeyEntry) gin.HandlerFunc {
 		}
 		c.Set(ContextRoles, roles)
 
-		allowed, ok := permissionMatrix[c.FullPath()][c.Request.Method]
+		allowed, ok := permissionMatrix[routeKey(c.FullPath())][c.Request.Method]
 		if !ok || !hasAnyRole(roles, allowed) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"code": "FORBIDDEN", "message": "role not permitted for " + c.Request.Method + " " + c.FullPath(),
@@ -107,6 +107,21 @@ func NewAPIKeyAuth(keys []APIKeyEntry) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// routeKey 把请求路由模板映射到权限矩阵键。嵌入形态（Mount 到宿主子路径）时
+// c.FullPath() 携带挂载前缀（如 /agentflow/api/v1/agents），矩阵键无前缀——
+// 按后缀匹配归一；直接命中优先。矩阵键均为完整路径，后缀匹配不会误配。
+func routeKey(full string) string {
+	if _, ok := permissionMatrix[full]; ok {
+		return full
+	}
+	for k := range permissionMatrix {
+		if strings.HasSuffix(full, k) {
+			return k
+		}
+	}
+	return full
 }
 
 // ContextRoles gin context key：当前请求的角色集合。

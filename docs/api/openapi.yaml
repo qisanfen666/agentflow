@@ -276,7 +276,7 @@ components:
       required: [type]
       description: 执行环境路由信息，按 type 分派到对应 Runtime
       properties:
-        type: { type: string, enum: [python-http, docker], description: v1 内置两种，自定义 Runtime 经配置注册 }
+        type: { type: string, description: 已注册的 Runtime 类型；内置 python-http / docker，自定义类型经 WithRuntime 注入后同样可用（未注册类型创建即 400） }
         host: { type: string, description: python-http 必填，Agent 服务地址 }
         image: { type: string, description: docker 可选，覆盖沙箱默认镜像 }
         env: { type: object, additionalProperties: { type: string } }

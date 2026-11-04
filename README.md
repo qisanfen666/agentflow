@@ -10,7 +10,8 @@
 
 - Agent 注册与版本化（乐观锁、软删除、版本锁定执行）
 - 任务提交、状态机驱动与可靠队列（at-least-once 语义）
-- Runtime 路由：进程直连（python-http）与一次性 Docker 沙箱容器
+- Runtime 路由：进程直连（python-http）与一次性 Docker 沙箱容器；自定义执行环境经
+  `WithRuntime` 注入（如 [examples/pr-review](examples/pr-review) 的 claude-code Runtime）
 - SSE 输出透传（断线重连含历史回放）
 - 工具注册表（JSON Schema 校验、MCP 格式导出）
 - 可观测性：append-only 审计、Prometheus 指标、OTel 链路追踪
@@ -168,6 +169,7 @@ go test ./...                 # 单元 + 合同 + Redis 集成（不可达自动
 ./scripts/smoke-m4.ps1        # 库形态嵌入：宿主路由与挂载控制面共存（需 python3）
 ./scripts/smoke-m5.ps1        # 观测栈闭环：指标进 Prometheus + 看板进 Grafana（需 docker）
 ./scripts/smoke-m6.ps1        # 治理三层防线：认证/审批/预算/限流（需 python3）
+./scripts/smoke-pr.ps1        # 场景闭环：PR Review 中台（CI 触发/mock claude/直播/审批/回写，需 docker）
 ```
 
 ## 配置参考（Config）
@@ -207,7 +209,8 @@ internal/registry/    工具 schema 编译 + MCP 导出
 internal/policy/      治理规则链（限流 / 预算）
 internal/observability/ 审计 / 指标 / 追踪
 cmd/agentflow-server/ 独立部署二进制
-examples/             embed（嵌入示例）、python-agent（零依赖执行面）
+examples/             embed（嵌入示例）、python-agent（零依赖执行面）、
+                      pr-review（PR Review 中台场景：自定义 Runtime + GUI 控制台）
 docs/                 合同文档、SSE 协议、OpenAPI
 deploy/               观测栈（Prometheus + Grafana）
 scripts/              各验收场景冒烟脚本

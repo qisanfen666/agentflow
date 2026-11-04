@@ -1,0 +1,42 @@
+# GitHub Actions -> PR Review 中台 接入示例（预留配置，按需复制到 .github/workflows/）
+#
+# 模型：自托管 runner 与中台同机/共享文件系统（内部中台的常见形态）。
+#       runner checkout 出 PR 工作区，把绝对路径与 git diff 补丁随 webhook 传给中台；
+#       中台提交评审任务，控制面把 workspace 只读挂进一次性容器跑 claude。
+#
+# 使用前改三处：MIDWAY_URL、runner 标签、以及（如需）生产仓库路由（由中台 repo 目录决定）。
+name: pr-review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: [self-hosted, pr-review] # 与中台同机的自托管 runner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # diff 需要完整历史
+
+      - name: Trigger midway review
+        shell: pwsh
+        env:
+          MIDWAY_URL: http://midway.internal:8090
+        run: |
+          # 与 scripts/make-testdata.ps1 相同的产物：PR 分支检出 + git diff 补丁
+          $diff = git diff origin/${{ github.base_ref }}..HEAD
+          $body = @{
+            repo      = "${{ github.event.repository.name }}"
+            pr        = "${{ github.event.pull_request.number }}"
+            title     = "${{ github.event.pull_request.title }}"
+            workspace = "${{ github.workspace }}"   # 中台可读的绝对路径（同机 runner）
+            diff      = $diff
+          } | ConvertTo-Json -Depth 4
+
+          # 幂等保证：webhook/CI 重发不重复建任务（控制面 Idempotency-Key = repo+pr）
+          Invoke-RestMethod -Method Post -Uri "$env:MIDWAY_URL/webhook/pr" `
+            -ContentType "application/json" -Body $body
+
+          # 结果回写不在 CI 侧轮询等待：中台终态后自行回写（评审直播/审批在 GUI 完成）。
+          # 如需阻塞门禁，可轮询 GET $MIDWAY_URL/api/board 并按 conclusion 判定。

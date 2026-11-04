@@ -59,9 +59,29 @@ type Panel struct {
 	stopMover  func() // 停止 delayed->ready 搬运协程（Redis 模式）
 }
 
+// Option 是 New 的函数式配置项：宿主注入库装配所需的外部组件（如自定义 Runtime）。
+type Option func(*panelOptions)
+
+// panelOptions 收集 Option 注入的组件，New 内统一并进装配流程。
+type panelOptions struct {
+	extraRuntimes []runtime.Runtime
+}
+
+// WithRuntime 注册自定义 Runtime（公开扩展点①）：与内置 Runtime 一起参与路由。
+// 自定义类型不需要写进 Config.Runtimes（该列表只用于开关内置类型；只想要自定义时
+// 传 Runtimes: []string{} 关掉全部内置）。类型名与内置/其他自定义重复时 New 失败——
+// 宁可启动失败，不要静默覆盖路由。
+func WithRuntime(rt runtime.Runtime) Option {
+	return func(o *panelOptions) { o.extraRuntimes = append(o.extraRuntimes, rt) }
+}
+
 // New 按配置装配控制面。只做构建与连通性检查，不启动任何 goroutine——
 // 便于在 main 里尽早暴露配置错误（存不连不上、Runtime 名写错等）。
-func New(cfg Config) (*Panel, error) {
+func New(cfg Config, opts ...Option) (*Panel, error) {
+	var po panelOptions
+	for _, opt := range opts {
+		opt(&po)
+	}
 	p := &Panel{cfg: withDefaults(cfg)}
 
 	var (
@@ -105,10 +125,16 @@ func New(cfg Config) (*Panel, error) {
 		return nil, fmt.Errorf("storage: 未知驱动 %q（可选 memory | redis）", p.cfg.Storage.Driver)
 	}
 
-	// Runtime 装配：按声明列表构建，重复/未知类型直接报错（宁可启动失败，不要静默降级）。
-	runtimes, err := buildRuntimes(p.cfg)
+	// Runtime 装配：内置按声明列表构建 + Option 注入的自定义合并，重复/未知类型
+	// 直接报错（宁可启动失败，不要静默降级）。
+	runtimes, err := buildRuntimes(p.cfg, po.extraRuntimes)
 	if err != nil {
 		return nil, err
+	}
+	// 已注册类型集合：API 层校验 agent.runtime.type 用（拼错在创建时即 400）
+	rtTypes := make(map[string]bool, len(runtimes))
+	for _, rt := range runtimes {
+		rtTypes[rt.Type()] = true
 	}
 
 	// 观测组件按配置装配：审计（路径即启用）+ 指标（MetricsEnabled）。
@@ -167,17 +193,18 @@ func New(cfg Config) (*Panel, error) {
 
 	p.worker = worker
 	p.deps = api.Dependencies{
-		Agents:     agents,
-		Tasks:      tasks,
-		Dispatcher: dispatcher,
-		Hub:        hub,
-		Queue:      queue,
-		Idem:       idem,
-		Tools:      reg,
-		Audit:      tel.Audit,
-		Metrics:    tel.Metrics,
-		Auth:       auth,
-		Policy:     chain,
+		Agents:      agents,
+		Tasks:       tasks,
+		Dispatcher:  dispatcher,
+		Hub:         hub,
+		Queue:       queue,
+		Idem:        idem,
+		Tools:       reg,
+		Audit:       tel.Audit,
+		Metrics:     tel.Metrics,
+		Auth:        auth,
+		Policy:      chain,
+		RuntimeTypes: rtTypes,
 	}
 	p.route = api.NewRouter(p.deps)
 	return p, nil
@@ -310,11 +337,12 @@ func withDefaults(cfg Config) Config {
 	return cfg
 }
 
-// buildRuntimes 按声明列表构建执行环境。未知类型报错而非忽略：
-// 配置里写了 "docer"（拼错）应当启动失败，而不是运行到路由时才发现。
-func buildRuntimes(cfg Config) ([]runtime.Runtime, error) {
-	seen := make(map[string]bool, len(cfg.Runtimes))
-	out := make([]runtime.Runtime, 0, len(cfg.Runtimes))
+// buildRuntimes 构建执行环境：内置按声明列表 + Option 注入的自定义合并。
+// 未知内置名报错而非忽略：配置里写了 "docer"（拼错）应当启动失败，
+// 而不是运行到路由时才发现。类型名全局（内置 + 自定义）去重。
+func buildRuntimes(cfg Config, extra []runtime.Runtime) ([]runtime.Runtime, error) {
+	seen := make(map[string]bool, len(cfg.Runtimes)+len(extra))
+	out := make([]runtime.Runtime, 0, len(cfg.Runtimes)+len(extra))
 	for _, t := range cfg.Runtimes {
 		if seen[t] {
 			return nil, fmt.Errorf("runtimes: 重复声明 %q", t)
@@ -330,8 +358,16 @@ func buildRuntimes(cfg Config) ([]runtime.Runtime, error) {
 				NanoCPUs:       cfg.Sandbox.NanoCPUs,
 			}))
 		default:
-			return nil, fmt.Errorf("runtimes: 未知类型 %q（可选 python-http | docker）", t)
+			return nil, fmt.Errorf("runtimes: 未知类型 %q（可选 python-http | docker；自定义类型用 WithRuntime 注入）", t)
 		}
+	}
+	for _, rt := range extra {
+		t := rt.Type()
+		if seen[t] {
+			return nil, fmt.Errorf("runtimes: 重复声明 %q（WithRuntime 与内置/其他自定义冲突）", t)
+		}
+		seen[t] = true
+		out = append(out, rt)
 	}
 	return out, nil
 }
