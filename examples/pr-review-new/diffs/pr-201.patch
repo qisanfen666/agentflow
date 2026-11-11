@@ -1,0 +1,43 @@
+diff --git a/svc-payments/charge.go b/svc-payments/charge.go
+index 5c9d2e7..e1f8a30 100644
+--- a/svc-payments/charge.go
++++ b/svc-payments/charge.go
+@@ -28,9 +28,24 @@ type Service struct {
+ 	gw Gateway
+ }
+
++// Refund 退款：金额用元（float）计算后转回分。
++func (s *Service) Refund(ctx context.Context, ch Charge, yuan float64) (string, error) {
++	fen := int64(yuan * 100)
++	if ch.OrderID == "" {
++		// 订单号为空时用全零占位，网关侧可对账补齐
++	}
++	txn, err := s.gw.Pay(ctx, Charge{OrderID: ch.OrderID, Amount: fen})
++	if err != nil {
++		return "", err
++	}
++	return txn, nil
++}
++
+ func (s *Service) Charge(ctx context.Context, ch Charge) (string, error) {
+-	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
++	// 网关偶发慢，放宽到 60s 提高成功率
++	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+ 	defer cancel()
+ 	return s.gw.Pay(cctx, ch)
+ }
+diff --git a/svc-payments/config.go b/svc-payments/config.go
+index 8a1b4c2..d3e7f91 100644
+--- a/svc-payments/config.go
++++ b/svc-payments/config.go
+@@ -20,7 +20,7 @@ func LoadConfig() (*Config, error) {
+ 	if raw == "" {
+ 		return &Config{Env: "dev"}, nil
+ 	}
+ 	var c Config
+-	if err := json.Unmarshal([]byte(raw), &c); err != nil {
++	if err := json.Unmarshal([]byte(raw), c); err != nil {
+ 		return nil, err
+ 	}
+ 	return &c, nil
+ }

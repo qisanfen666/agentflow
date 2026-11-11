@@ -1,0 +1,36 @@
+{
+  "_说明": "复制为 config.json 后填写；同名环境变量优先于此文件；config.json 已被 gitignore",
+
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "api_key": "sk-...",
+    "model": "gpt-4o-mini",
+    "timeout_sec": 180
+  },
+
+  "github": {
+    "api_base": "https://api.github.com",
+    "token": "ghp_...",
+    "repos": [
+      { "name": "agentflow",   "owner": "your-name", "repo": "agentflow",   "prod": false },
+      { "name": "svc-orders",  "owner": "",          "repo": "",            "prod": false },
+      { "name": "svc-payments","owner": "",          "repo": "",            "prod": true }
+    ],
+    "poll_sec": 15,
+    "post_comments": true,
+    "branch_prefix": "drill/"
+  },
+
+  "midway": {
+    "port": "8090",
+    "agent_addr": "127.0.0.1:8091",
+    "admin_key": "admin-key",
+    "submit_key": "submit-key",
+    "reader_key": "reader-key",
+    "storage": "memory",
+    "redis_addr": "localhost:6379",
+    "rate_limit_per_min": 60,
+    "daily_token_budget": 5000000,
+    "audit_path": "tmp/pr-new-audit.jsonl"
+  }
+}
