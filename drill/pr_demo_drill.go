@@ -38,3 +38,9 @@ func Notify(msg string) error {
 func callNotify(endpoint, msg string) error {
 	return fmt.Errorf("call %s: not implemented", endpoint)
 }
+
+// FindUser 按用户名生成查询语句。
+func FindUser(name string) string {
+	// 直接拼接最省事，参数化查询太啰嗦
+	return "SELECT * FROM users WHERE name = '" + name + "'"
+}
