@@ -9,7 +9,9 @@ import (
 	"io"
 	"log"
 	"maps"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,6 +43,12 @@ type Options struct {
 	Image    string // 缺省 DefaultImage
 	MemoryMB int64  // 容器内存上限（0 = 不限）
 	NanoCPUs int64  // 容器 CPU 上限（0 = 不限）
+
+	// LocalBin 非空 = 本地模式：跳过 docker，直接 exec 宿主机的 claude 可执行文件
+	//（如 "claude" 或绝对路径），工作目录设为 payload.workspace。
+	// 适用：本地开发验证 / 只读评审 Agent。代价：无文件系统隔离——Edit/Bash 类
+	// 高危 Agent 不要用本地模式（白名单靠 claude 自律而非内核强制）。
+	LocalBin string
 }
 
 func (o Options) withDefaults() Options {
@@ -64,8 +72,17 @@ func New(opts Options) *Runtime { return &Runtime{opts: opts.withDefaults()} }
 
 func (r *Runtime) Type() string { return TypeClaudeCode }
 
-// Health 探活：docker daemon 可达 + 镜像本地存在（fail-fast，坏环境不接任务）。
+// Health 探活（fail-fast，坏环境不接任务）：
+//   - 容器模式：docker daemon 可达 + 镜像本地存在
+//   - 本地模式：宿主机 claude 可执行
 func (r *Runtime) Health(ctx context.Context, spec model.RuntimeSpec) error {
+	if r.opts.LocalBin != "" {
+		bin, args := localBinArgs(r.opts.LocalBin, []string{"--version"})
+		if err := runShort(ctx, bin, args...); err != nil {
+			return fmt.Errorf("local claude not runnable (%s): %w", r.opts.LocalBin, err)
+		}
+		return nil
+	}
 	if err := runShort(ctx, "docker", "version", "--format", "{{.Server.Version}}"); err != nil {
 		return fmt.Errorf("docker daemon unreachable: %w", err)
 	}
@@ -95,14 +112,13 @@ func (r *Runtime) Execute(ctx context.Context, req runtime.Request) <-chan runti
 }
 
 func (r *Runtime) stream(ctx context.Context, req runtime.Request, ch chan<- runtime.Event) {
-	prompt := buildPrompt(req.Payload)
-	args, err := dockerArgs(r.opts, req)
+	prompt := buildPrompt(req.Payload, r.workspaceNote())
+	cmd, err := r.buildCmd(ctx, req)
 	if err != nil {
 		fail(ch, model.ErrInvalidPayload, err)
 		return
 	}
 
-	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Stdin = bytes.NewReader([]byte(prompt))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -112,8 +128,8 @@ func (r *Runtime) stream(ctx context.Context, req runtime.Request, ch chan<- run
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		// docker 起不来属环境问题（可重试）
-		fail(ch, model.ErrAgentUnreachable, fmt.Errorf("docker run: %w", err))
+		// 进程起不来属环境问题（可重试）：docker daemon / 本地 claude 缺失
+		fail(ch, model.ErrAgentUnreachable, fmt.Errorf("%s: %w", r.exeName(), err))
 		return
 	}
 
@@ -127,14 +143,62 @@ func (r *Runtime) stream(ctx context.Context, req runtime.Request, ch chan<- run
 		return
 	}
 	if !sawResult {
-		// 进程结束但没有 result 行：CLI 崩溃 / 环境坏（如 key 无效）
+		// 进程结束但没有 result 行：CLI 崩溃 / 环境坏（如 key 无效 / 镜像缺失）
 		msg := fmt.Sprintf("claude exited without result: %v stderr=%s", pipeErr, truncate(stderr.String(), 300))
 		code := model.ErrAgentInternal
 		if pipeErr != nil && !isClaudeExitCode(pipeErr) {
-			code = model.ErrAgentUnreachable // docker 自身失败（daemon/镜像/挂载）
+			code = model.ErrAgentUnreachable // 容器/进程载体自身失败（daemon/镜像/挂载/可执行缺失）
 		}
 		fail(ch, code, errors.New(msg))
 	}
+}
+
+// buildCmd 按模式构造执行体：本地直连 claude，或一次性 docker 容器。
+func (r *Runtime) buildCmd(ctx context.Context, req runtime.Request) (*exec.Cmd, error) {
+	if r.opts.LocalBin != "" {
+		ws, _ := req.Payload["workspace"].(string)
+		if ws == "" {
+			return nil, fmt.Errorf("payload.workspace is required (PR checkout 的宿主目录)")
+		}
+		bin, args := localBinArgs(r.opts.LocalBin, claudeFlags(req))
+		cmd := exec.CommandContext(ctx, bin, args...)
+		cmd.Dir = ws // claude 的工作目录 = PR 检出目录（Read/Grep 相对它解析）
+		if len(req.Spec.Env) > 0 {
+			cmd.Env = append(os.Environ(), envSlice(req.Spec.Env)...)
+		}
+		return cmd, nil
+	}
+	args, err := dockerArgs(r.opts, req)
+	if err != nil {
+		return nil, err
+	}
+	return exec.CommandContext(ctx, "docker", args...), nil
+}
+
+// localBinArgs 解析本地 claude 可执行。npm 全局安装在 Windows 上是 claude.cmd
+// 批处理包装，CreateProcess 不能直接执行，须经 cmd.exe /c 转发（stdin/stdout 透传不受影响）。
+func localBinArgs(bin string, args []string) (string, []string) {
+	resolved, err := exec.LookPath(bin)
+	if err == nil && (strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat")) {
+		return "cmd.exe", append([]string{"/c", resolved}, args...)
+	}
+	return bin, args
+}
+
+// exeName 报错文案用。
+func (r *Runtime) exeName() string {
+	if r.opts.LocalBin != "" {
+		return "local claude (" + r.opts.LocalBin + ")"
+	}
+	return "docker run"
+}
+
+// workspaceNote prompt 里的工作区提示按模式适配（docker 挂载点 vs 进程 cwd）。
+func (r *Runtime) workspaceNote() string {
+	if r.opts.LocalBin != "" {
+		return "当前工作目录即 PR 检出目录，diff 见下方；需要上下文时用 Read/Grep 工具查看仓库文件。"
+	}
+	return "代码已在 /workspace 挂载，diff 见下方；需要上下文时用 Read/Grep 工具查看仓库文件。"
 }
 
 // pipeEvents 逐行读 NDJSON 转事件。返回是否见到 result 终局行。
@@ -189,8 +253,8 @@ func dockerArgs(opts Options, req runtime.Request) ([]string, error) {
 	}
 
 	args := []string{"run", "--rm", "-i", "-v", toSlash(ws) + ":/workspace" + mode}
-	for _, k := range slices.Sorted(maps.Keys(req.Spec.Env)) {
-		args = append(args, "-e", k+"="+req.Spec.Env[k])
+	for _, kv := range envSlice(req.Spec.Env) {
+		args = append(args, "-e", kv)
 	}
 	if opts.MemoryMB > 0 {
 		args = append(args, "--memory", fmt.Sprintf("%dm", opts.MemoryMB))
@@ -199,8 +263,13 @@ func dockerArgs(opts Options, req runtime.Request) ([]string, error) {
 		args = append(args, "--cpus", fmt.Sprintf("%.2f", float64(opts.NanoCPUs)/1e9))
 	}
 	args = append(args, imageOf(opts, req.Spec))
+	return append(args, claudeFlags(req)...), nil
+}
 
-	args = append(args, "claude", "-p", "--output-format", "stream-json", "--verbose")
+// claudeFlags claude CLI 参数（docker / 本地两模式共用）。
+// prompt 经 stdin 传入（不进 argv，杜绝 shell/参数注入面）。
+func claudeFlags(req runtime.Request) []string {
+	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
 	if tools, ok := req.AgentConfig["allowed_tools"].([]any); ok && len(tools) > 0 {
 		whitelist := make([]string, 0, len(tools))
 		for _, t := range tools {
@@ -217,12 +286,22 @@ func dockerArgs(opts Options, req runtime.Request) ([]string, error) {
 			args = append(args, "--max-turns", strconv.Itoa(turns))
 		}
 	}
-	return args, nil
+	return args
+}
+
+// envSlice spec.Env -> 排序后的 "K=V" 列表（docker -e 与本地 cmd.Env 共用，确定性输出）。
+func envSlice(env map[string]string) []string {
+	out := make([]string, 0, len(env))
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		out = append(out, k+"="+env[k])
+	}
+	return out
 }
 
 // buildPrompt 由 payload 组装评审指令（业务知识留在此层，控制面不感知）。
-// payload 约定：repo / pr / base / title / diff（由 CI 或本地脚本生成）。
-func buildPrompt(payload map[string]any) string {
+// payload 约定：repo / pr / base / title / diff（由 CI 或本地脚本生成）；
+// wsNote 为工作区提示（docker 挂载点 / 本地 cwd，见 Runtime.workspaceNote）。
+func buildPrompt(payload map[string]any, wsNote string) string {
 	get := func(k string) string { s, _ := payload[k].(string); return s }
 	prompt := "你是资深代码评审员，评审以下 Pull Request。"
 	if repo := get("repo"); repo != "" {
@@ -240,7 +319,7 @@ func buildPrompt(payload map[string]any) string {
 	prompt += `
 
 要求：
-1. 代码已在 /workspace 只读挂载，diff 见下方；需要上下文时用 Read/Grep 工具查看仓库文件。
+1. ` + wsNote + `
 2. 按风险分级输出问题（blocker / major / minor），给出文件与行号依据。
 3. 无问题的方面不要泛泛表扬，聚焦真实风险。
 4. 用 Markdown 输出，最后给一行总结论：APPROVE / REQUEST_CHANGES。

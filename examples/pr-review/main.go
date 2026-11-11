@@ -52,7 +52,15 @@ func main() {
 	board := newBoard(cfg)
 
 	// ---------- 控制面装配（嵌入形态） ----------
+	// 执行模式三选一（互斥，按环境变量）：
+	//   默认           mock：回放录制会话，无需 key/docker 之外的东西
+	//   CLAUDE_IMAGE   容器：一次性 docker 跑 claude（强隔离，生产形态）
+	//   CLAUDE_LOCAL=1 本地：直接 exec 宿主机 claude（无隔离；只读评审/开发验证用）
 	image := envOr("CLAUDE_IMAGE", claude.DefaultMockImage)
+	rtOpts := claude.Options{Image: image}
+	if os.Getenv("CLAUDE_LOCAL") != "" {
+		rtOpts = claude.Options{LocalBin: envOr("CLAUDE_BIN", "claude")}
+	}
 	panel, err := agentflow.New(agentflow.Config{
 		Server:  agentflow.ServerConfig{Mode: gin.ReleaseMode}, // Addr 留空：监听归宿主
 		Storage: cfg.storage,
@@ -74,7 +82,7 @@ func main() {
 			AuditLogPath:   cfg.auditPath,
 			ServiceName:    "pr-review-midway",
 		},
-	}, agentflow.WithRuntime(claude.New(claude.Options{Image: image})))
+	}, agentflow.WithRuntime(claude.New(rtOpts)))
 	if err != nil {
 		log.Fatalf("agentflow 装配失败: %v", err)
 	}
@@ -82,10 +90,11 @@ func main() {
 
 	cp := newCPClient("http://127.0.0.1:"+cfg.port+"/agentflow", cfg)
 	mid := &midway{cfg: cfg, cp: cp, board: board}
-	if image != claude.DefaultMockImage {
+	mid.mode = "mock"
+	if rtOpts.LocalBin != "" {
+		mid.mode = "local"
+	} else if image != claude.DefaultMockImage {
 		mid.mode = "real"
-	} else {
-		mid.mode = "mock"
 	}
 
 	// ---------- 中台业务路由 ----------
@@ -130,11 +139,18 @@ func main() {
 		log.Fatalf("Agent 初始化失败: %v", err)
 	}
 	mode := "mock（无需 API key，回放录制会话）"
-	if image != claude.DefaultMockImage {
-		mode = "real（容器内运行 claude CLI）"
+	switch {
+	case rtOpts.LocalBin != "":
+		mode = "local（宿主机直接运行 claude，无容器隔离）"
+	case image != claude.DefaultMockImage:
+		mode = "real（一次性容器内运行 claude CLI）"
 	}
-	log.Printf("PR Review 中台: http://localhost:%s/ui  （镜像 %s，模式 %s；审计 %s）",
-		cfg.port, image, mode, cfg.auditPath)
+	execDesc := "镜像 " + image
+	if rtOpts.LocalBin != "" {
+		execDesc = "本地 claude (" + rtOpts.LocalBin + ")"
+	}
+	log.Printf("PR Review 中台: http://localhost:%s/ui  （%s，模式 %s；审计 %s）",
+		cfg.port, execDesc, mode, cfg.auditPath)
 
 	<-ctx.Done()
 	log.Println("退出信号，关停中台...")

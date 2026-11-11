@@ -22,10 +22,31 @@ go run ./examples/pr-review
 
 ## 真实模式（真实 PR 检验）
 
+三种执行模式按环境变量切换：
+
+### 模式 A：本地直连（最快上手，无需 docker/镜像）
+
+宿主机已装 claude CLI（`npm i -g @anthropic-ai/claude-code`）即可；认证用你本机的
+`claude` 登录态（或宿主 env 的 `ANTHROPIC_API_KEY`）。
+
+```powershell
+$env:CLAUDE_LOCAL = "1"          # 可选 CLAUDE_BIN 指定可执行路径（默认 claude）
+go run ./examples/pr-review      # GUI 头部芯片显示 LOCAL
+```
+
+注意：本地模式**无文件系统隔离**——只读评审 Agent（Read/Grep/Glob 白名单）适用；
+auto-fixer（Edit/Bash）请勿本地跑。
+
+### 模式 B：一次性容器（强隔离，生产形态）
+
 ```powershell
 # 构建真实镜像（node + claude CLI）
 cd examples/pr-review/docker
 docker build -f Dockerfile.claude -t agentflow-claude:latest .
+
+# 国内网络：若基础镜像拉取失败（镜像加速器不可达），先经可达源拉取再构建：
+#   docker pull docker.1ms.run/library/node:20-slim
+#   docker tag docker.1ms.run/library/node:20-slim node:20-slim
 
 # 起中台：切镜像 + 注入 key（key 只进 AgentSpec.Env -> 容器，不落代码/日志）
 cd ../../..
@@ -34,8 +55,13 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 go run ./examples/pr-review
 ```
 
+### 模式 C：mock（默认）
+
+无需 key 与真实镜像，回放录制的 stream-json 会话（GUI 与链路完全同构）。
+
 GUI 新建 PR（svc-orders / svc-payments）即对 `testdata/` 里的真实 git 仓库与
-真实 git diff 发起评审；claude 在一次性容器内只读挂载仓库，产出分级问题清单。
+真实 git diff 发起评审；claude 在容器内只读挂载仓库（模式 B）或以 PR 目录为
+工作目录（模式 A），产出分级问题清单。
 
 ## 故事五阶段 -> 实现落点
 
@@ -60,8 +86,12 @@ GUI 新建 PR（svc-orders / svc-payments）即对 `testdata/` 里的真实 git 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | PORT | 8090 | 中台监听端口 |
-| CLAUDE_IMAGE | agentflow-claude-mock:latest | mock / 真实镜像切换 |
-| ANTHROPIC_API_KEY | — | 真实模式的 key（注入 AgentSpec.Env） |
+| CLAUDE_LOCAL | — | 非空 = 本地直连宿主 claude（模式 A） |
+| CLAUDE_BIN | claude | 模式 A 的可执行名/路径 |
+| CLAUDE_IMAGE | agentflow-claude-mock:latest | mock / 真实镜像切换（模式 B/C） |
+| ANTHROPIC_API_KEY | — | claude 认证：官方 key 或中转 key（跳过 `claude login` 的标准方式）；模式 A 若本机已登录可省 |
+| ANTHROPIC_BASE_URL | — | Anthropic 兼容网关地址（用中转/自建网关时设置，官方可省） |
+| ANTHROPIC_AUTH_TOKEN | — | Bearer 型网关令牌（少数中转需要，与 API_KEY 二选一按网关要求） |
 | STORAGE / REDIS_ADDR | memory | 控制面存储（redis = 重启不丢任务） |
 | RATE_LIMIT_PER_MIN / DAILY_TOKEN_BUDGET | 60 / 5000000 | 治理护栏 |
 | AUDIT_PATH | tmp/pr-audit.jsonl | 审计 JSONL |

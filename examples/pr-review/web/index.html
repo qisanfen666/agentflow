@@ -170,8 +170,9 @@ async function api(method, path, body) {
 // ---- 看板轮询 ----
 async function refresh() {
   try { board = await api('GET', '/api/board'); } catch { return; }
-  $('#mode').textContent = board.mode === 'real' ? 'REAL · claude CLI' : 'MOCK · 回放';
-  $('#mode').className = 'chip mode-' + board.mode;
+  const modeText = { real: 'REAL · 容器 claude', local: 'LOCAL · 宿主 claude', mock: 'MOCK · 回放' };
+  $('#mode').textContent = modeText[board.mode] || board.mode;
+  $('#mode').className = 'chip mode-' + (board.mode === 'local' ? 'real' : board.mode);
   $('#budget').textContent = `日预算 ${(board.daily_token_budget/1e6).toFixed(1)}M tok · 限流 ${board.rate_limit_per_min}/min`;
   $('#total').textContent = `累计 ${board.total_tokens} tok`;
 

@@ -38,9 +38,15 @@ type runtimeSpecIn struct {
 }
 
 func (m *midway) bootstrapAgents(ctx context.Context) error {
+	// 认证/端点透传：任一存在才注入 spec.Env（容器模式 -e 进容器；本地模式并入子进程 env）。
+	//   ANTHROPIC_API_KEY    官方 API key 或中转站 key（跳过 claude login 的标准姿势）
+	//   ANTHROPIC_BASE_URL   Anthropic 兼容网关（官方可省）
+	//   ANTHROPIC_AUTH_TOKEN  Bearer 型网关（少数中转用）
 	keyEnv := map[string]string{}
-	if k := os.Getenv("ANTHROPIC_API_KEY"); k != "" {
-		keyEnv["ANTHROPIC_API_KEY"] = k // 只进 spec.Env（容器内可见），不落业务代码
+	for _, k := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"} {
+		if v := os.Getenv(k); v != "" {
+			keyEnv[k] = v
+		}
 	}
 	readOnly := []any{"Read", "Grep", "Glob"}
 	fixTools := []any{"Read", "Grep", "Glob", "Edit", "Bash"}

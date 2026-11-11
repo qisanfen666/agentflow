@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -124,7 +125,7 @@ func TestDockerArgs(t *testing.T) {
 		"-v E:/demo/repo:/workspace:ro",
 		"-e ANTHROPIC_API_KEY=sk-x -e B=2", // env 排序确定性
 		"agentflow-claude-mock:latest",
-		"claude -p --output-format stream-json --verbose",
+		"-p --output-format stream-json --verbose", // ENTRYPOINT=claude，flags 直接跟在镜像后
 		"--allowedTools Read Grep Glob",
 		"--max-turns 8",
 	} {
@@ -144,12 +145,58 @@ func TestDockerArgs(t *testing.T) {
 	}
 }
 
+func TestBuildCmdLocal(t *testing.T) {
+	rt := New(Options{LocalBin: "claude"})
+	req := runtime.Request{
+		TaskID: "t_1",
+		Spec:   model.RuntimeSpec{Type: TypeClaudeCode, Env: map[string]string{"ANTHROPIC_API_KEY": "sk-x"}},
+		AgentConfig: map[string]any{
+			"allowed_tools": []any{"Read", "Grep"},
+			"max_turns":     float64(6),
+		},
+		Payload: map[string]any{"workspace": `E:\demo\repo`},
+	}
+	cmd, err := rt.buildCmd(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 可执行可能是 cmd.exe /c 包装（npm 的 claude.cmd），也可能是原生二进制
+	joined := strings.Join(cmd.Args, " ")
+	if !strings.Contains(joined, "claude") {
+		t.Errorf("本地模式应执行 claude: %q", joined)
+	}
+	if cmd.Dir != `E:\demo\repo` {
+		t.Errorf("cwd 应为 workspace: %q", cmd.Dir)
+	}
+	if !strings.Contains(joined, "-p --output-format stream-json --verbose --allowedTools Read Grep --max-turns 6") {
+		t.Errorf("flags 不符: %s", joined)
+	}
+	if len(cmd.Env) == 0 {
+		t.Error("spec.Env 应注入子进程环境")
+	}
+	found := false
+	for _, kv := range cmd.Env {
+		if kv == "ANTHROPIC_API_KEY=sk-x" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("env 缺少 ANTHROPIC_API_KEY")
+	}
+
+	// 本地模式缺 workspace 同样拒绝
+	delete(req.Payload, "workspace")
+	if _, err := rt.buildCmd(context.Background(), req); err == nil {
+		t.Error("缺 workspace 应报错")
+	}
+}
+
 func TestBuildPromptContainsDiff(t *testing.T) {
 	p := buildPrompt(map[string]any{
 		"repo": "svc-orders", "pr": "101", "base": "main",
 		"title": "feat: orders query", "diff": "+SELECT * FROM",
-	})
-	for _, want := range []string{"svc-orders", "#101", "main", "feat: orders query", "+SELECT * FROM", "APPROVE"} {
+	}, "代码已在 /workspace 挂载")
+	for _, want := range []string{"svc-orders", "#101", "main", "feat: orders query", "+SELECT * FROM", "APPROVE", "/workspace"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt 缺少 %q", want)
 		}
